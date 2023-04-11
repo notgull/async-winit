@@ -1,0 +1,15 @@
+[package]
+name = "async-winit"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+concurrent-queue = "2.2.0"
+once_cell = "1.17.1"
+raw-window-handle = "0.5.2"
+winit = { version = "0.28.3", default-features = false }
+
+[dev-dependencies]
+winit = { version = "0.28.3", default-features = false, features = ["x11"] }
