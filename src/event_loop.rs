@@ -5,6 +5,7 @@ use crate::reactor::Reactor;
 use std::cell::RefCell;
 use std::convert::Infallible;
 use std::future::Future;
+use std::ops;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
@@ -24,8 +25,19 @@ pub struct EventLoop<T: 'static> {
     /// The underlying event loop.
     inner: RefCell<Option<winit::event_loop::EventLoop<Message<T>>>>,
 
+    /// The window target.
+    window_target: EventLoopWindowTarget<T>,
+}
+
+/// A reference to the `EventLoop` that allows the user to create windows, among other things.
+///
+/// Unlike in `winit`, this type is cheaply clonable.
+pub struct EventLoopWindowTarget<T: 'static> {
     /// The associated reactor, cached for convenience.
     reactor: &'static Reactor,
+
+    /// The event loop proxy.
+    proxy: EventLoopProxy<T>,
 }
 
 /// Object that allows for building the [`EventLoop`].
@@ -38,6 +50,23 @@ pub struct EventLoopBuilder<T: 'static> {
 pub struct EventLoopProxy<T: 'static> {
     /// The underlying proxy.
     inner: winit::event_loop::EventLoopProxy<Message<T>>,
+}
+
+impl<T: 'static> Clone for EventLoopWindowTarget<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reactor: self.reactor,
+            proxy: self.proxy.clone(),
+        }
+    }
+}
+
+impl<T: 'static> Clone for EventLoopProxy<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl EventLoopBuilder<()> {
@@ -57,9 +86,15 @@ impl<T: 'static> EventLoopBuilder<T> {
 
     /// Builds a new event loop.
     pub fn build(&mut self) -> EventLoop<T> {
+        let inner = self.inner.build();
         EventLoop {
-            inner: RefCell::new(Some(self.inner.build())),
-            reactor: Reactor::get(),
+            window_target: EventLoopWindowTarget {
+                reactor: Reactor::get(),
+                proxy: EventLoopProxy {
+                    inner: inner.create_proxy(),
+                },
+            },
+            inner: RefCell::new(Some(inner)),
         }
     }
 }
@@ -74,7 +109,21 @@ impl EventLoop<()> {
     }
 }
 
+impl<T: 'static> EventLoopWindowTarget<T> {
+    /// Request that the event loop exit as soon as possible.
+    #[inline]
+    pub fn exit(&self) {
+        self.reactor.request_exit();
+    }
+}
+
 impl<T: 'static> EventLoop<T> {
+    /// Manually get a reference to the event loop's window target.
+    #[inline]
+    pub fn window_target(&self) -> &EventLoopWindowTarget<T> {
+        &self.window_target
+    }
+
     /// Block on a future forever.
     ///
     /// This function can only be called once per event loop, despite taking `&self`. Calling this
@@ -89,7 +138,7 @@ impl<T: 'static> EventLoop<T> {
             .borrow_mut()
             .take()
             .expect("Event loop already blocked on");
-        let reactor = self.reactor;
+        let reactor = self.window_target.reactor;
 
         reactor.set_proxy(inner_loop.create_proxy());
 
@@ -153,6 +202,22 @@ impl<T: 'static> EventLoop<T> {
     }
 }
 
+impl<T: 'static> ops::Deref for EventLoop<T> {
+    type Target = EventLoopWindowTarget<T>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.window_target
+    }
+}
+
+impl<T: 'static> ops::DerefMut for EventLoop<T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.window_target
+    }
+}
+
 struct ReactorWaker {
     /// The reactor to notify.
     reactor: &'static Reactor,
@@ -170,14 +235,17 @@ impl Wake for ReactorWaker {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
+        // If we are currently polling the event loop, don't notify.
         if self.awake.load(Ordering::SeqCst) {
             return;
         }
 
+        // If we are already notified, don't notify again.
         if self.notified.swap(true, Ordering::SeqCst) {
             return;
         }
 
+        // Wake up the reactor.
         self.reactor.notify();
     }
 }

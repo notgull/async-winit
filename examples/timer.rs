@@ -19,8 +19,13 @@ fn android_main(app: AndroidApp) {
 }
 
 fn main2(evl: EventLoop<()>) {
+    let target = evl.window_target().clone();
     evl.block_on(async move {
+        // Wait one second.
         Timer::after(Duration::from_secs(1)).await;
-        std::process::exit(0)
+
+        // Exit the event loop.
+        target.exit();
+        std::future::pending().await
     });
 }
