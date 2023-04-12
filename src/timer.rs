@@ -48,6 +48,11 @@ impl Timer {
         }
     }
 
+    /// Returns `true` if this timer will eventually return `Poll::Ready`.
+    pub fn will_fire(&self) -> bool {
+        self.deadline.is_some()
+    }
+
     /// Create a timer that fires after the given duration.
     pub fn after(duration: Duration) -> Self {
         Instant::now()
@@ -77,6 +82,46 @@ impl Timer {
         }
     }
 
+    /// Set this timer to never fire.
+    pub fn set_never(&mut self) {
+        self.clear();
+        self.deadline = None;
+    }
+
+    /// Set this timer to fire after the given duration.
+    pub fn set_after(&mut self, duration: Duration) {
+        match Instant::now().checked_add(duration) {
+            Some(deadline) => self.set_at(deadline),
+            None => self.set_never(),
+        }
+    }
+
+    /// Set this timer to fire at the given deadline.
+    pub fn set_at(&mut self, deadline: Instant) {
+        self.set_interval_at(deadline, Duration::MAX)
+    }
+
+    /// Set this timer to run at an interval.
+    pub fn set_interval(&mut self, period: Duration) {
+        match Instant::now().checked_add(period) {
+            Some(deadline) => self.set_interval_at(deadline, period),
+            None => self.set_never(),
+        }
+    }
+
+    /// Set this timer to run on an interval starting at the given time.
+    pub fn set_interval_at(&mut self, start: Instant, period: Duration) {
+        self.clear();
+
+        self.deadline = Some(start);
+        self.period = period;
+
+        if let Some((id, waker)) = self.id_and_waker.as_mut() {
+            // Re-register the timer into the reactor.
+            *id = self.reactor.insert_timer(start, waker);
+        }
+    }
+
     fn clear(&mut self) {
         if let (Some(deadline), Some((id, _))) = (self.deadline.take(), self.id_and_waker.take()) {
             self.reactor.remove_timer(deadline, id);
@@ -94,7 +139,7 @@ impl Future for Timer {
     type Output = Instant;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.poll_next(cx).map(|x| x.unwrap())
+        self.poll_next(cx).map(Option::unwrap)
     }
 }
 
@@ -123,6 +168,7 @@ impl Stream for Timer {
                     this.deadline = None;
                 }
 
+                // Return the time that we fired at.
                 return Poll::Ready(Some(result_time));
             } else {
                 match &this.id_and_waker {
