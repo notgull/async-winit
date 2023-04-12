@@ -185,9 +185,6 @@ impl<T: 'static> EventLoop<T> {
                 }
 
                 Event::MainEventsCleared => {
-                    // Enter the sleeping state.
-                    notifier.awake.store(false, Ordering::SeqCst);
-
                     for waker in wakers.drain(..) {
                         // Don't let a panicking waker blow everything up.
                         std::panic::catch_unwind(|| waker.wake()).ok();
@@ -196,6 +193,9 @@ impl<T: 'static> EventLoop<T> {
                     // Drain the queue of incoming requests.
                     // TODO: Drain wakers to "wakers" and wake them all up at once.
                     reactor.drain_loop_queue(elwt);
+
+                    // Enter the sleeping state.
+                    notifier.awake.store(false, Ordering::SeqCst);
 
                     // Check the notification.
                     if notifier.notified.swap(false, Ordering::SeqCst) {
@@ -253,13 +253,13 @@ struct ReactorWaker<T: 'static> {
 
 impl<T: 'static> Proxy for ReactorWaker<T> {
     fn notify(&self) {
-        // If we are currently polling the event loop, don't notify.
-        if self.awake.load(Ordering::SeqCst) {
+        // If we are already notified, don't notify again.
+        if self.notified.swap(true, Ordering::SeqCst) {
             return;
         }
 
-        // If we are already notified, don't notify again.
-        if self.notified.swap(true, Ordering::SeqCst) {
+        // If we are currently polling the event loop, don't notify.
+        if self.awake.load(Ordering::SeqCst) {
             return;
         }
 
