@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use async_winit::event_loop::{EventLoop, EventLoopBuilder};
+use async_winit::window::Window;
 use async_winit::Timer;
 
 #[cfg(target_os = "android")]
@@ -21,10 +22,14 @@ fn android_main(app: AndroidApp) {
 fn main2(evl: EventLoop<()>) {
     let target = evl.window_target().clone();
     evl.block_on(async move {
+        // Create a window.
+        let window = Window::new().await.unwrap();
+
         // Wait one second.
         Timer::after(Duration::from_secs(1)).await;
 
         // Exit the event loop.
+        drop(window);
         target.exit();
         std::future::pending().await
     });

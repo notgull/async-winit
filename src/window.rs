@@ -31,13 +31,45 @@ pub struct WindowAttributes {
     pub active: bool,
 }
 
+impl Default for WindowAttributes {
+    #[inline]
+    fn default() -> WindowAttributes {
+        WindowAttributes {
+            inner_size: None,
+            min_inner_size: None,
+            max_inner_size: None,
+            position: None,
+            resizable: true,
+            enabled_buttons: WindowButtons::all(),
+            title: "winit window".to_owned(),
+            maximized: false,
+            fullscreen: None,
+            visible: true,
+            transparent: false,
+            decorations: true,
+            window_level: Default::default(),
+            window_icon: None,
+            preferred_theme: None,
+            resize_increments: None,
+            content_protected: false,
+            active: true,
+        }
+    }
+}
+
 /// A builder to use to create windows.
+#[derive(Default)]
 pub struct WindowBuilder {
     attributes: WindowAttributes,
     // TODO: Platform specific attributes.
 }
 
 impl WindowBuilder {
+    /// Create a new window builder.
+    pub fn new() -> WindowBuilder {
+        WindowBuilder::default()
+    }
+
     pub fn attributes(&self) -> &WindowAttributes {
         &self.attributes
     }
@@ -57,11 +89,61 @@ impl WindowBuilder {
     }
 
     pub(crate) fn as_winit_builder(&self) -> winit::window::WindowBuilder {
-        todo!()
+        let mut builder = winit::window::WindowBuilder::new();
+
+        if let Some(size) = self.attributes.inner_size {
+            builder = builder.with_inner_size(size);
+        }
+
+        if let Some(size) = self.attributes.min_inner_size {
+            builder = builder.with_min_inner_size(size);
+        }
+
+        if let Some(size) = self.attributes.max_inner_size {
+            builder = builder.with_max_inner_size(size);
+        }
+
+        if let Some(position) = self.attributes.position {
+            builder = builder.with_position(position);
+        }
+
+        builder = builder
+            .with_resizable(self.attributes.resizable)
+            .with_enabled_buttons(self.attributes.enabled_buttons)
+            .with_title(&self.attributes.title)
+            .with_fullscreen(self.attributes.fullscreen.clone())
+            .with_maximized(self.attributes.maximized)
+            .with_visible(self.attributes.visible)
+            .with_transparent(self.attributes.transparent)
+            .with_decorations(self.attributes.decorations);
+
+        if let Some(icon) = self.attributes.window_icon.clone() {
+            builder = builder.with_window_icon(Some(icon));
+        }
+
+        builder = builder.with_theme(self.attributes.preferred_theme);
+
+        if let Some(size) = self.attributes.resize_increments {
+            builder = builder.with_resize_increments(size);
+        }
+
+        builder = builder
+            .with_content_protected(self.attributes.content_protected)
+            .with_window_level(self.attributes.window_level)
+            .with_active(self.attributes.active);
+
+        builder
     }
 }
 
 /// A window.
 pub struct Window {
     inner: winit::window::Window,
+}
+
+impl Window {
+    /// Create a new window.
+    pub async fn new() -> Result<Window, OsError> {
+        WindowBuilder::new().build().await
+    }
 }

@@ -175,6 +175,9 @@ impl Reactor {
     /// Push an event loop operation.
     pub(crate) async fn push_event_loop_op(&self, op: EventLoopOp) {
         self.evl_ops.0.send(op).await.unwrap();
+
+        // Notify the event loop that there is a new operation.
+        self.notify();
     }
 
     /// Drain the event loop operation queue.
