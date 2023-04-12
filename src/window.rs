@@ -56,7 +56,7 @@ impl WindowBuilder {
         Ok(Window { inner })
     }
 
-    pub(crate) fn into_winit_builder(&self) -> winit::window::WindowBuilder {
+    pub(crate) fn as_winit_builder(&self) -> winit::window::WindowBuilder {
         todo!()
     }
 }

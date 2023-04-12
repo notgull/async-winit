@@ -215,7 +215,7 @@ impl EventLoopOp {
     fn run<T: 'static>(self, target: &winit::event_loop::EventLoopWindowTarget<T>) {
         match self {
             EventLoopOp::BuildWindow { builder, waker } => {
-                waker.send(builder.into_winit_builder().build(target));
+                waker.send(builder.as_winit_builder().build(target));
             }
         }
     }
