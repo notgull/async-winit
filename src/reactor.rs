@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use concurrent_queue::ConcurrentQueue;
-use event_listener::Event;
 use once_cell::sync::OnceCell as OnceLock;
+use winit::error::OsError;
 
 pub(crate) struct Reactor {
     /// Begin exiting the event loop.
@@ -206,7 +206,7 @@ pub(crate) enum EventLoopOp {
         builder: WindowBuilder,
 
         /// The window has been built.
-        waker: Complete<winit::window::Window>,
+        waker: Complete<Result<winit::window::Window, OsError>>,
     },
 }
 
@@ -215,7 +215,7 @@ impl EventLoopOp {
     fn run<T: 'static>(self, target: &winit::event_loop::EventLoopWindowTarget<T>) {
         match self {
             EventLoopOp::BuildWindow { builder, waker } => {
-                waker.send(todo!());
+                waker.send(builder.into_winit_builder().build(target));
             }
         }
     }

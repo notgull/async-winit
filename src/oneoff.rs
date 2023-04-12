@@ -32,8 +32,8 @@ impl<T> Complete<T> {
 }
 
 /// Create a pair of oneoff channels.
-pub(crate) fn oneoff<T>() -> (Oneoff<T>, Complete<T>) {
+pub(crate) fn oneoff<T>() -> (Complete<T>, Oneoff<T>) {
     let (tx, rx) = async_channel::bounded(1);
 
-    (Oneoff { rx }, Complete { tx })
+    (Complete { tx }, Oneoff { rx })
 }

@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 async-channel = "1.8.0"
 concurrent-queue = "2.2.0"
-event-listener = "2.5.3"
 futures-lite = "1.13.0"
 once_cell = "1.17.1"
 raw-window-handle = "0.5.2"
