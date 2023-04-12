@@ -2,8 +2,10 @@
 name = "async-winit"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["John Nunley <jtnunley01@gmail.com>"]
+description = "Use winit like an async runtime"
+repository = "https://github.com/notgull/async-winit"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 async-channel = "1.8.0"
