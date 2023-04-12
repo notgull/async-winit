@@ -171,6 +171,25 @@ impl Reactor {
             proxy.notify();
         }
     }
+
+    /// Push an event loop operation.
+    pub(crate) async fn push_event_loop_op(&self, op: EventLoopOp) {
+        self.evl_ops.0.send(op).await.unwrap();
+    }
+
+    /// Drain the event loop operation queue.
+    pub(crate) fn drain_loop_queue<T: 'static>(
+        &self,
+        elwt: &winit::event_loop::EventLoopWindowTarget<T>,
+    ) {
+        for _ in 0..self.evl_ops.1.capacity().unwrap() {
+            if let Ok(op) = self.evl_ops.1.try_recv() {
+                op.run(elwt);
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 /// Trait used to abstract over the different event loop types.
@@ -189,4 +208,15 @@ pub(crate) enum EventLoopOp {
         /// The window has been built.
         waker: Complete<winit::window::Window>,
     },
+}
+
+impl EventLoopOp {
+    /// Run this event loop operation on a window target.
+    fn run<T: 'static>(self, target: &winit::event_loop::EventLoopWindowTarget<T>) {
+        match self {
+            EventLoopOp::BuildWindow { builder, waker } => {
+                waker.send(todo!());
+            }
+        }
+    }
 }

@@ -26,8 +26,8 @@ pub(crate) struct Complete<T> {
 
 impl<T> Complete<T> {
     /// Send the event.
-    pub(crate) async fn send(self, event: T) {
-        self.tx.send(event).await.ok();
+    pub(crate) fn send(self, event: T) {
+        self.tx.try_send(event).ok();
     }
 }
 

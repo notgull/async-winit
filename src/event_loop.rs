@@ -174,7 +174,7 @@ impl<T: 'static> EventLoop<T> {
         // We have to allocate the future on the heap to make it movable.
         let mut future = Box::pin(future);
 
-        inner_loop.run(move |event, _, flow| {
+        inner_loop.run(move |event, elwt, flow| {
             match event {
                 Event::NewEvents(_) => {
                     // We are now awake.
@@ -192,6 +192,10 @@ impl<T: 'static> EventLoop<T> {
                         // Don't let a panicking waker blow everything up.
                         std::panic::catch_unwind(|| waker.wake()).ok();
                     }
+
+                    // Drain the queue of incoming requests.
+                    // TODO: Drain wakers to "wakers" and wake them all up at once.
+                    reactor.drain_loop_queue(elwt);
 
                     // Check the notification.
                     if notifier.notified.swap(false, Ordering::SeqCst) {
