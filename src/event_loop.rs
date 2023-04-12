@@ -76,6 +76,12 @@ impl EventLoopBuilder<()> {
     }
 }
 
+impl<T: 'static> Default for EventLoopBuilder<T> {
+    fn default() -> Self {
+        Self::with_user_event()
+    }
+}
+
 impl<T: 'static> EventLoopBuilder<T> {
     /// Create a new [`EventLoopBuilder`] with a new user event.
     pub fn with_user_event() -> Self {
@@ -106,6 +112,13 @@ impl EventLoop<()> {
     #[inline]
     pub fn new() -> EventLoop<()> {
         EventLoopBuilder::new().build()
+    }
+}
+
+impl Default for EventLoop<()> {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
 

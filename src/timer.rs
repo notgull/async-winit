@@ -2,6 +2,7 @@
 
 use crate::reactor::Reactor;
 
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
@@ -23,6 +24,18 @@ pub struct Timer {
     /// The period.
     period: Duration,
 }
+
+impl fmt::Debug for Timer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Timer")
+            .field("deadline", &self.deadline)
+            .field("period", &self.period)
+            .field("registered", &self.id_and_waker.is_some())
+            .finish()
+    }
+}
+
+impl Unpin for Timer {}
 
 impl Timer {
     /// Create a new timer that will never fire.
