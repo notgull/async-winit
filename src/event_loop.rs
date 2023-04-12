@@ -1,13 +1,13 @@
 //! The [`EventLoop`] and associated structures.
 
-use crate::reactor::Reactor;
+use crate::reactor::{Proxy, Reactor};
 
 use std::cell::RefCell;
 use std::convert::Infallible;
 use std::future::Future;
 use std::ops;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
 
 use winit::event::Event;
@@ -123,6 +123,12 @@ impl Default for EventLoop<()> {
 }
 
 impl<T: 'static> EventLoopWindowTarget<T> {
+    /// Create a proxy that can be used to send custom events to the event loop.
+    #[inline]
+    pub fn create_proxy(&self) -> EventLoopProxy<T> {
+        self.proxy.clone()
+    }
+
     /// Request that the event loop exit as soon as possible.
     #[inline]
     pub fn exit(&self) {
@@ -153,18 +159,17 @@ impl<T: 'static> EventLoop<T> {
             .expect("Event loop already blocked on");
         let reactor = self.window_target.reactor;
 
-        reactor.set_proxy(inner_loop.create_proxy());
-
         let mut timeout = None;
         let mut wakers = vec![];
 
         // Create a waker to wake us up.
         let notifier = Arc::new(ReactorWaker {
-            reactor,
+            proxy: Mutex::new(self.create_proxy()),
             notified: AtomicBool::new(true),
             awake: AtomicBool::new(false),
         });
         let notifier_waker = Waker::from(notifier.clone());
+        reactor.set_proxy(notifier.clone());
 
         // We have to allocate the future on the heap to make it movable.
         let mut future = Box::pin(future);
@@ -231,9 +236,9 @@ impl<T: 'static> ops::DerefMut for EventLoop<T> {
     }
 }
 
-struct ReactorWaker {
-    /// The reactor to notify.
-    reactor: &'static Reactor,
+struct ReactorWaker<T: 'static> {
+    /// The proxy used to wake up the event loop.
+    proxy: Mutex<EventLoopProxy<T>>,
 
     /// Whether or not we are already notified.
     notified: AtomicBool,
@@ -242,12 +247,8 @@ struct ReactorWaker {
     awake: AtomicBool,
 }
 
-impl Wake for ReactorWaker {
-    fn wake(self: Arc<Self>) {
-        self.wake_by_ref()
-    }
-
-    fn wake_by_ref(self: &Arc<Self>) {
+impl<T: 'static> Proxy for ReactorWaker<T> {
+    fn notify(&self) {
         // If we are currently polling the event loop, don't notify.
         if self.awake.load(Ordering::SeqCst) {
             return;
@@ -259,6 +260,21 @@ impl Wake for ReactorWaker {
         }
 
         // Wake up the reactor.
-        self.reactor.notify();
+        self.proxy
+            .lock()
+            .unwrap()
+            .inner
+            .send_event(Message::Wakeup)
+            .ok();
+    }
+}
+
+impl<T: 'static> Wake for ReactorWaker<T> {
+    fn wake(self: Arc<Self>) {
+        self.notify()
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.notify()
     }
 }

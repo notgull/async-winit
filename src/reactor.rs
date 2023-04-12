@@ -1,16 +1,13 @@
 //! The shared reactor used by the runtime.
 
-use crate::event_loop::Message;
-
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::task::Waker;
 use std::time::{Duration, Instant};
 
 use concurrent_queue::ConcurrentQueue;
-use once_cell::sync::OnceCell;
-use winit::event_loop::EventLoopProxy;
+use once_cell::sync::OnceCell as OnceLock;
 
 pub(crate) struct Reactor {
     /// Begin exiting the event loop.
@@ -19,7 +16,7 @@ pub(crate) struct Reactor {
     /// The event loop proxy.
     ///
     /// Used to wake up the event loop.
-    proxy: Mutex<Option<Box<dyn Proxy + Send + 'static>>>,
+    proxy: OnceLock<Arc<dyn Proxy + Send + Sync + 'static>>,
 
     /// The timer wheel.
     timers: Mutex<BTreeMap<(Instant, usize), Waker>>,
@@ -49,11 +46,11 @@ impl Reactor {
     /// Relevant winit code:
     /// https://github.com/rust-windowing/winit/blob/2486f0f1a1d00ac9e5936a5222b2cfe90ceeca02/src/event_loop.rs#L114-L117
     pub(crate) fn get() -> &'static Self {
-        static REACTOR: OnceCell<Reactor> = OnceCell::new();
+        static REACTOR: OnceLock<Reactor> = OnceLock::new();
 
         REACTOR.get_or_init(|| Reactor {
             exit_requested: AtomicBool::new(false),
-            proxy: Mutex::new(None),
+            proxy: OnceLock::new(),
             timers: BTreeMap::new().into(),
             timer_op_queue: ConcurrentQueue::bounded(1024),
             timer_id: AtomicUsize::new(1),
@@ -61,8 +58,8 @@ impl Reactor {
     }
 
     /// Set the event loop proxy.
-    pub(crate) fn set_proxy(&self, proxy: impl Proxy + Send + 'static) {
-        *self.proxy.lock().unwrap() = Some(Box::new(proxy));
+    pub(crate) fn set_proxy(&self, proxy: Arc<dyn Proxy + Send + Sync + 'static>) {
+        self.proxy.set(proxy).ok();
     }
 
     /// Get whether or not we need to exit.
@@ -161,7 +158,7 @@ impl Reactor {
 
     /// Wake up the event loop.
     pub(crate) fn notify(&self) {
-        if let Some(proxy) = self.proxy.lock().unwrap().as_ref() {
+        if let Some(proxy) = self.proxy.get() {
             proxy.notify();
         }
     }
@@ -171,12 +168,4 @@ impl Reactor {
 pub(crate) trait Proxy {
     /// Notify the proxy with a wake-up.
     fn notify(&self);
-}
-
-impl<T: 'static> Proxy for EventLoopProxy<Message<T>> {
-    fn notify(&self) {
-        self.send_event(Message::Wakeup)
-            .ok()
-            .expect("failed to wake up event loop");
-    }
 }
