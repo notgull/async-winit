@@ -76,3 +76,63 @@ impl Drop for Timer {
         self.clear();
     }
 }
+
+impl Future for Timer {
+    type Output = Instant;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.poll_next(cx).map(|x| x.unwrap())
+    }
+}
+
+impl Stream for Timer {
+    type Item = Instant;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+
+        if let Some(ref mut deadline) = this.deadline {
+            // Check if the timer is ready.
+            if *deadline < Instant::now() {
+                if let Some((id, _)) = this.id_and_waker.take() {
+                    this.reactor.remove_timer(*deadline, id);
+                }
+
+                let result_time = *deadline;
+
+                if let Some(next) = deadline.checked_add(this.period) {
+                    *deadline = next;
+
+                    // Register the timer into the reactor.
+                    let id = this.reactor.insert_timer(next, cx.waker());
+                    this.id_and_waker = Some((id, cx.waker().clone()));
+                } else {
+                    this.deadline = None;
+                }
+
+                return Poll::Ready(Some(result_time));
+            } else {
+                match &this.id_and_waker {
+                    None => {
+                        // This timer needs to be registered.
+                        let id = this.reactor.insert_timer(*deadline, cx.waker());
+                        this.id_and_waker = Some((id, cx.waker().clone()));
+                    }
+
+                    Some((id, w)) if !w.will_wake(cx.waker()) => {
+                        // Deregister timer and remove the old waker.
+                        this.reactor.remove_timer(*deadline, *id);
+
+                        // Register the timer into the reactor.
+                        let id = this.reactor.insert_timer(*deadline, cx.waker());
+                        this.id_and_waker = Some((id, cx.waker().clone()));
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+
+        Poll::Pending
+    }
+}

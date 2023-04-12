@@ -5,9 +5,9 @@ use crate::reactor::Reactor;
 use std::cell::RefCell;
 use std::convert::Infallible;
 use std::future::Future;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::task::{Wake, Waker, Context, Poll};
+use std::sync::Arc;
+use std::task::{Context, Poll, Wake, Waker};
 
 use winit::event::Event;
 #[doc(inline)]
@@ -99,7 +99,7 @@ impl<T: 'static> EventLoop<T> {
         // Create a waker to wake us up.
         let notifier = Arc::new(ReactorWaker {
             reactor,
-            notified: AtomicBool::new(false),
+            notified: AtomicBool::new(true),
             awake: AtomicBool::new(false),
         });
         let notifier_waker = Waker::from(notifier.clone());
@@ -117,14 +117,14 @@ impl<T: 'static> EventLoop<T> {
                     timeout = reactor.process_timers(&mut wakers);
                 }
 
-                Event::RedrawEventsCleared => {
+                Event::MainEventsCleared => {
+                    // Enter the sleeping state.
+                    notifier.awake.store(false, Ordering::SeqCst);
+
                     for waker in wakers.drain(..) {
                         // Don't let a panicking waker blow everything up.
                         std::panic::catch_unwind(|| waker.wake()).ok();
                     }
-
-                    // Enter the sleeping state.
-                    notifier.awake.store(false, Ordering::SeqCst);
 
                     // Check the notification.
                     if notifier.notified.swap(false, Ordering::SeqCst) {

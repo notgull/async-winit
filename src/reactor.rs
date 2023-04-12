@@ -13,11 +13,6 @@ use once_cell::sync::OnceCell;
 use winit::event_loop::EventLoopProxy;
 
 pub(crate) struct Reactor {
-    /// Whether the event loop is currently processing user events.
-    ///
-    /// If this is `true`, waking the event loop is unnecessary.
-    processing_user_events: AtomicBool,
-
     /// Begin exiting the event loop.
     exit_requested: AtomicBool,
 
@@ -57,7 +52,6 @@ impl Reactor {
         static REACTOR: OnceCell<Reactor> = OnceCell::new();
 
         REACTOR.get_or_init(|| Reactor {
-            processing_user_events: AtomicBool::new(false),
             exit_requested: AtomicBool::new(false),
             proxy: Mutex::new(None),
             timers: BTreeMap::new().into(),
