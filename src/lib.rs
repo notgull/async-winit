@@ -2,6 +2,7 @@
 
 // Private modules.
 //mod handler;
+mod oneoff;
 mod reactor;
 mod timer;
 

@@ -1,17 +1,25 @@
 //! The shared reactor used by the runtime.
 
+use crate::oneoff::Complete;
+use crate::window::WindowBuilder;
+
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::Waker;
 use std::time::{Duration, Instant};
 
+use async_channel::{Receiver, Sender};
 use concurrent_queue::ConcurrentQueue;
+use event_listener::Event;
 use once_cell::sync::OnceCell as OnceLock;
 
 pub(crate) struct Reactor {
     /// Begin exiting the event loop.
     exit_requested: AtomicBool,
+
+    /// The channel used to send event loop operation requests.
+    evl_ops: (Sender<EventLoopOp>, Receiver<EventLoopOp>),
 
     /// The event loop proxy.
     ///
@@ -51,6 +59,7 @@ impl Reactor {
         REACTOR.get_or_init(|| Reactor {
             exit_requested: AtomicBool::new(false),
             proxy: OnceLock::new(),
+            evl_ops: async_channel::bounded(1024),
             timers: BTreeMap::new().into(),
             timer_op_queue: ConcurrentQueue::bounded(1024),
             timer_id: AtomicUsize::new(1),
@@ -168,4 +177,16 @@ impl Reactor {
 pub(crate) trait Proxy {
     /// Notify the proxy with a wake-up.
     fn notify(&self);
+}
+
+/// An operation to run in the main event loop thread.
+pub(crate) enum EventLoopOp {
+    /// Build a window.
+    BuildWindow {
+        /// The window builder to build.
+        builder: WindowBuilder,
+
+        /// The window has been built.
+        waker: Complete<winit::window::Window>,
+    },
 }
