@@ -236,7 +236,12 @@ impl Reactor {
                 self.evl_registration.resumed.run_with(&mut ());
             }
             Event::Suspended => self.evl_registration.suspended.run_with(&mut ()),
-
+            Event::RedrawRequested(id) => {
+                let windows = self.windows.lock().unwrap();
+                if let Some(registration) = windows.get(&id) {
+                    registration.redraw_requested.run_with(&mut ());
+                }
+            }
             _ => {}
         }
     }
