@@ -189,6 +189,17 @@ impl<T: 'static> EventLoop<T> {
         // We have to allocate the future on the heap to make it movable.
         let mut future = Box::pin(future);
 
+        // Function for polling the future once.
+        let mut poll_once = move || {
+            let mut cx = Context::from_waker(&notifier_waker);
+            if let Poll::Ready(i) = future.as_mut().poll(&mut cx) {
+                match i {}
+            }
+        };
+
+        // Poll once before starting to set up event handlers et al.
+        poll_once();
+
         inner_loop.run(move |event, elwt, flow| {
             let mut wake = false;
 
@@ -227,11 +238,7 @@ impl<T: 'static> EventLoop<T> {
                 // Check the notification.
                 if notifier.notified.swap(false, Ordering::SeqCst) {
                     // We were notified, so we should poll the future.
-                    let mut cx = Context::from_waker(&notifier_waker);
-                    match future.as_mut().poll(&mut cx) {
-                        Poll::Ready(i) => match i {},
-                        Poll::Pending => {}
-                    }
+                    poll_once();
                 }
             }
 
