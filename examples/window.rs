@@ -28,15 +28,10 @@ fn main2(evl: EventLoop<()>) {
         let window = Window::new().await.unwrap();
 
         // Print resize events.
-        let print_resize = async {
-            window
-                .resized()
-                .wait_many()
-                .for_each(|new_size| {
-                    println!("Window resized to {:?}", new_size);
-                })
-                .await;
-            panic!("dont end");
+        let print_resize = {
+            window.resized().wait_many().for_each(|new_size| {
+                println!("Window resized to {:?}", new_size);
+            })
         };
 
         // Wait for the window to close.

@@ -18,17 +18,21 @@ pub struct Handler<T: Event> {
 
     /// Channel for broadcasting events.
     broadcast: BroadcastSender<T::Clonable>,
+
+    /// The corresponding receiver, to keep it alive.
+    _recv: BroadcastReceiver<T::Clonable>,
 }
 
 impl<T: Event> Handler<T> {
     pub(crate) fn new() -> Self {
-        let (mut sender, _reader) = async_broadcast::broadcast(16);
+        let (mut sender, _recv) = async_broadcast::broadcast(16);
         sender.set_await_active(false);
         sender.set_overflow(true);
 
         Self {
             once: Box::pin(Mutex::new(Waiters::new())),
             broadcast: sender,
+            _recv,
         }
     }
 
@@ -131,13 +135,7 @@ impl<T: Event> Stream for WaitMany<T> {
     type Item = T::Clonable;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let item = Pin::new(&mut self.recv).poll_next(cx);
-
-        if let Poll::Ready(item) = &item {
-            debug_assert!(item.is_some());
-        }
-
-        item
+        Pin::new(&mut self.recv).poll_next(cx)
     }
 }
 
