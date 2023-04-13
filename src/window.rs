@@ -2,8 +2,14 @@
 
 use crate::dpi::{Position, Size};
 use crate::error::OsError;
+use crate::handler::Handler;
 use crate::oneoff::oneoff;
 use crate::reactor::{EventLoopOp, Reactor};
+
+pub(crate) mod registration;
+
+use registration::Registration;
+use std::sync::Arc;
 
 #[doc(inline)]
 pub use winit::window::{Fullscreen, Icon, Theme, WindowButtons, WindowLevel};
@@ -85,7 +91,14 @@ impl WindowBuilder {
             .await;
 
         let inner = rx.recv().await?;
-        Ok(Window { inner })
+
+        // Insert the window into the global window map.
+        let registration = Reactor::get().insert_window(inner.id());
+
+        Ok(Window {
+            inner,
+            registration,
+        })
     }
 
     pub(crate) fn as_winit_builder(&self) -> winit::window::WindowBuilder {
@@ -138,12 +151,27 @@ impl WindowBuilder {
 
 /// A window.
 pub struct Window {
+    /// Underlying window.
     inner: winit::window::Window,
+
+    /// Registration for the window.
+    registration: Arc<Registration>,
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        Reactor::get().remove_window(self.inner.id());
+    }
 }
 
 impl Window {
     /// Create a new window.
     pub async fn new() -> Result<Window, OsError> {
         WindowBuilder::new().build().await
+    }
+
+    /// Get the handler for the `CloseRequested` event.
+    pub fn close_requested(&self) -> &Handler<()> {
+        &self.registration.close_requested
     }
 }

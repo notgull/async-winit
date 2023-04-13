@@ -175,7 +175,7 @@ impl<T: 'static> EventLoop<T> {
         let mut future = Box::pin(future);
 
         inner_loop.run(move |event, elwt, flow| {
-            match event {
+            match &event {
                 Event::NewEvents(_) => {
                     // We are now awake.
                     notifier.awake.store(true, Ordering::SeqCst);

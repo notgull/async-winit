@@ -1,9 +1,10 @@
 //! The shared reactor used by the runtime.
 
 use crate::oneoff::Complete;
+use crate::window::registration::Registration;
 use crate::window::WindowBuilder;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::Waker;
@@ -12,7 +13,9 @@ use std::time::{Duration, Instant};
 use async_channel::{Receiver, Sender};
 use concurrent_queue::ConcurrentQueue;
 use once_cell::sync::OnceCell as OnceLock;
+
 use winit::error::OsError;
+use winit::window::WindowId;
 
 pub(crate) struct Reactor {
     /// Begin exiting the event loop.
@@ -20,6 +23,9 @@ pub(crate) struct Reactor {
 
     /// The channel used to send event loop operation requests.
     evl_ops: (Sender<EventLoopOp>, Receiver<EventLoopOp>),
+
+    /// The list of windows.
+    windows: Mutex<HashMap<WindowId, Arc<Registration>>>,
 
     /// The event loop proxy.
     ///
@@ -60,6 +66,7 @@ impl Reactor {
             exit_requested: AtomicBool::new(false),
             proxy: OnceLock::new(),
             evl_ops: async_channel::bounded(1024),
+            windows: Mutex::new(HashMap::new()),
             timers: BTreeMap::new().into(),
             timer_op_queue: ConcurrentQueue::bounded(1024),
             timer_id: AtomicUsize::new(1),
@@ -111,6 +118,20 @@ impl Reactor {
             self.process_timer_ops(&mut timers);
             op = e.into_inner();
         }
+    }
+
+    /// Insert a window into the window list.
+    pub(crate) fn insert_window(&self, id: WindowId) -> Arc<Registration> {
+        let mut windows = self.windows.lock().unwrap();
+        let registration = Arc::new(Registration::new());
+        windows.insert(id, registration.clone());
+        registration
+    }
+
+    /// Remove a window from the window list.
+    pub(crate) fn remove_window(&self, id: WindowId) {
+        let mut windows = self.windows.lock().unwrap();
+        windows.remove(&id);
     }
 
     /// Process pending timer operations.

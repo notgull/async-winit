@@ -3,10 +3,10 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
-use std::task::{Poll, Context};
+use std::task::{Context, Poll};
 
-use async_broadcast::{Sender as BroadcastSender, Receiver as BroadcastReceiver};
-use async_channel::{Sender as ChannelSender, Receiver as ChannelReceiver};
+use async_broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use async_channel::{Receiver as ChannelReceiver, Sender as ChannelSender};
 use futures_lite::stream::Stream;
 
 /// A handler for events.
