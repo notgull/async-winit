@@ -175,6 +175,8 @@ impl<T: 'static> EventLoop<T> {
         let mut future = Box::pin(future);
 
         inner_loop.run(move |event, elwt, flow| {
+            let mut wake = false;
+
             match &event {
                 Event::NewEvents(_) => {
                     // We are now awake.
@@ -185,30 +187,37 @@ impl<T: 'static> EventLoop<T> {
                 }
 
                 Event::MainEventsCleared => {
-                    for waker in wakers.drain(..) {
-                        // Don't let a panicking waker blow everything up.
-                        std::panic::catch_unwind(|| waker.wake()).ok();
-                    }
-
-                    // Drain the queue of incoming requests.
-                    // TODO: Drain wakers to "wakers" and wake them all up at once.
-                    reactor.drain_loop_queue(elwt);
-
-                    // Enter the sleeping state.
-                    notifier.awake.store(false, Ordering::SeqCst);
-
-                    // Check the notification.
-                    if notifier.notified.swap(false, Ordering::SeqCst) {
-                        // We were notified, so we should poll the future.
-                        let mut cx = Context::from_waker(&notifier_waker);
-                        match future.as_mut().poll(&mut cx) {
-                            Poll::Ready(i) => match i {},
-                            Poll::Pending => {}
-                        }
-                    }
+                    wake = true;
                 }
 
                 _ => {}
+            }
+
+            if wake {
+                for waker in wakers.drain(..) {
+                    // Don't let a panicking waker blow everything up.
+                    std::panic::catch_unwind(|| waker.wake()).ok();
+                }
+            }
+
+            // Drain the queue of incoming requests.
+            // TODO: Drain wakers to "wakers" and wake them all up at once.
+            reactor.drain_loop_queue(elwt);
+            reactor.post_event(event);
+
+            if wake {
+                // Enter the sleeping state.
+                notifier.awake.store(false, Ordering::SeqCst);
+
+                // Check the notification.
+                if notifier.notified.swap(false, Ordering::SeqCst) {
+                    // We were notified, so we should poll the future.
+                    let mut cx = Context::from_waker(&notifier_waker);
+                    match future.as_mut().poll(&mut cx) {
+                        Poll::Ready(i) => match i {},
+                        Poll::Pending => {}
+                    }
+                }
             }
 
             // Set the control flow.

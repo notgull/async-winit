@@ -1,5 +1,6 @@
 //! The shared reactor used by the runtime.
 
+use crate::event_loop::Message;
 use crate::oneoff::Complete;
 use crate::window::registration::Registration;
 use crate::window::WindowBuilder;
@@ -212,6 +213,21 @@ impl Reactor {
             } else {
                 break;
             }
+        }
+    }
+
+    /// Post an event to the reactor.
+    pub(crate) fn post_event<T: 'static>(&self, event: winit::event::Event<'_, Message<T>>) {
+        use winit::event::Event;
+
+        match event {
+            Event::WindowEvent { window_id, event } => {
+                let mut windows = self.windows.lock().unwrap();
+                if let Some(registration) = windows.get(&window_id) {
+                    registration.signal(event);
+                }
+            }
+            _ => {}
         }
     }
 }

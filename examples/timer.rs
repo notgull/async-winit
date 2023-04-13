@@ -28,8 +28,9 @@ fn main2(evl: EventLoop<()>) {
         // Wait one second.
         Timer::after(Duration::from_secs(1)).await;
 
-        // Exit the event loop.
-        drop(window);
+        // Close the window.
+        window.close_requested().clone().await;
+
         target.exit();
         std::future::pending().await
     });

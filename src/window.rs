@@ -95,6 +95,8 @@ impl WindowBuilder {
         // Insert the window into the global window map.
         let registration = Reactor::get().insert_window(inner.id());
 
+        println!("Registered window: {:?}", inner.id());
+
         Ok(Window {
             inner,
             registration,
