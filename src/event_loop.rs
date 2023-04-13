@@ -1,6 +1,5 @@
 //! The [`EventLoop`] and associated structures.
 
-use crate::handler::Handler;
 use crate::reactor::{Proxy, Reactor};
 
 use std::cell::RefCell;

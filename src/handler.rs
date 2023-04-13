@@ -6,15 +6,48 @@ use std::marker::PhantomPinned;
 use std::mem;
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Mutex;
 use std::task::{Context, Poll, Waker};
 
-use async_broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
-use async_channel::{Receiver as ChannelReceiver, Sender as ChannelSender};
-use futures_lite::stream::Stream;
+use async_broadcast::Sender as BroadcastSender;
 
 pub struct Handler<T: Event> {
+    /// Queue of waiters for waiting once for a new event.
     once: Pin<Box<Mutex<Waiters<T::Clonable>>>>,
+
+    /// Channel for broadcasting events.
+    broadcast: BroadcastSender<T::Clonable>,
+}
+
+impl<T: Event> Handler<T> {
+    pub(crate) fn new() -> Self {
+        let (mut sender, _reader) = async_broadcast::broadcast(16);
+        sender.set_await_active(false);
+        sender.set_overflow(true);
+
+        Self {
+            once: Box::pin(Mutex::new(Waiters::new())),
+            broadcast: sender,
+        }
+    }
+
+    pub(crate) fn run_with(&self, event: &mut T::Unique<'_>) {
+        let clonable = T::downgrade(event);
+        self.once
+            .lock()
+            .unwrap()
+            .table
+            .notify(usize::MAX, || clonable.clone());
+
+        self.broadcast.try_broadcast(clonable).ok();
+    }
+
+    pub fn wait_once(&self) -> WaitOnce<'_, T> {
+        WaitOnce {
+            table: self.once.as_ref(),
+            listener: Listener::new(),
+        }
+    }
 }
 
 pin_project_lite::pin_project! {
@@ -35,6 +68,11 @@ impl<T: Event> Future for WaitOnce<'_, T> {
         let mut this = self.project();
         let mut table = this.table.get_ref().lock().unwrap();
 
+        // Insert into the table if we haven't already.
+        if this.listener.as_ref().is_empty() {
+            table.table.insert(this.listener.as_mut());
+        }
+
         // Check for an event.
         match table.table.register(this.listener.as_mut(), cx.waker()) {
             RegisterResult::NoTask => panic!("polled future after completion"),
@@ -45,7 +83,19 @@ impl<T: Event> Future for WaitOnce<'_, T> {
 }
 
 pub trait Event {
-    type Clonable;
+    type Clonable: Clone + 'static;
+    type Unique<'a>: 'a;
+
+    fn downgrade(unique: &mut Self::Unique<'_>) -> Self::Clonable;
+}
+
+impl<T: Clone + 'static> Event for T {
+    type Clonable = T;
+    type Unique<'a> = T;
+
+    fn downgrade(unique: &mut Self::Unique<'_>) -> Self::Clonable {
+        unique.clone()
+    }
 }
 
 struct Waiters<T> {
@@ -56,12 +106,45 @@ struct Waiters<T> {
     poller: Listener<T>,
 }
 
+impl<T> Waiters<T> {
+    fn new() -> Self {
+        Self {
+            table: Table::new(),
+            poller: Listener::new(),
+        }
+    }
+}
+
+impl<T> Drop for Waiters<T> {
+    fn drop(&mut self) {
+        // Remove the poller.
+        self.table
+            .remove(unsafe { Pin::new_unchecked(&mut self.poller) }, false);
+    }
+}
+
 struct Listener<T> {
     /// The inner entry in the table, if any.
     entry: Option<UnsafeCell<Entry<T>>>,
 
     /// This is never moved.
     _pin: PhantomPinned,
+}
+
+unsafe impl<T: Send> Send for Listener<T> {}
+unsafe impl<T: Send> Sync for Listener<T> {}
+
+impl<T> Listener<T> {
+    fn new() -> Self {
+        Self {
+            entry: None,
+            _pin: PhantomPinned,
+        }
+    }
+
+    fn is_empty(self: Pin<&Self>) -> bool {
+        self.entry.is_none()
+    }
 }
 
 struct Table<T> {
@@ -77,6 +160,9 @@ struct Table<T> {
     /// The number of entries in the table.
     len: usize,
 }
+
+unsafe impl<T: Send> Send for Table<T> {}
+unsafe impl<T: Send> Sync for Table<T> {}
 
 impl<T> Table<T> {
     /// Create a new, empty table.
@@ -124,7 +210,7 @@ impl<T> Table<T> {
     }
 
     /// Remove an entry from the table.
-    fn remove(&mut self, listener: Pin<&mut Listener<T>>, propagate: bool) -> Option<State<T>> {
+    fn remove(&mut self, mut listener: Pin<&mut Listener<T>>, propagate: bool) -> Option<State<T>> {
         let entry = unsafe {
             // SAFETY: We never move out the entry.
             let listener = listener.as_mut().get_unchecked_mut();
@@ -153,7 +239,7 @@ impl<T> Table<T> {
 
         // If this was the first unnotified entry, update the start.
         if Some(entry.into()) == self.start {
-            self.start = next;
+            self.start = self.tail;
         }
 
         // We can now take out the entry safely.
@@ -185,7 +271,7 @@ impl<T> Table<T> {
         let entry = unsafe {
             let listener = listener.as_mut().get_unchecked_mut();
 
-            match listener.entry {
+            match &listener.entry {
                 None => return RegisterResult::NoTask,
                 Some(entry) => &*entry.get(),
             }
@@ -236,6 +322,10 @@ impl<T> Table<T> {
                     let entry = unsafe { e.as_ref() };
                     self.start = entry.next.get();
 
+                    if self.start == Some(e) {
+                        panic!("self.start == Some(e)");
+                    }
+
                     // Notify the entry.
                     if let State::Listening(task) = entry.state.replace(State::Ready(generator())) {
                         task.wake();
@@ -284,10 +374,4 @@ enum State<T> {
 
     /// Listener is done.
     Done,
-}
-
-impl<T> State<T> {
-    fn is_ready(&self) -> bool {
-        matches!(self, State::Ready(_) | State::Done)
-    }
 }

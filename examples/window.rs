@@ -23,7 +23,7 @@ fn main2(evl: EventLoop<()>) {
         let window = Window::new().await.unwrap();
 
         // Wait for the window to close.
-        window.close_requested().clone().await;
+        window.close_requested().wait_once().await;
 
         // Exit.
         target.exit();
