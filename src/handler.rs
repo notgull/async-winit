@@ -9,7 +9,8 @@ use std::ptr::NonNull;
 use std::sync::Mutex;
 use std::task::{Context, Poll, Waker};
 
-use async_broadcast::Sender as BroadcastSender;
+use async_broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use futures_lite::Stream;
 
 pub struct Handler<T: Event> {
     /// Queue of waiters for waiting once for a new event.
@@ -48,6 +49,46 @@ impl<T: Event> Handler<T> {
             listener: Listener::new(),
         }
     }
+
+    pub fn wait_many(&self) -> WaitMany<T> {
+        WaitMany {
+            recv: self.broadcast.new_receiver(),
+        }
+    }
+}
+
+impl<T: Event> Unpin for Handler<T> {}
+
+impl<T: Event> Future for Handler<T> {
+    type Output = T::Clonable;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut &*self).poll(cx)
+    }
+}
+
+impl<T: Event> Future for &Handler<T> {
+    type Output = T::Clonable;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = *self.get_mut();
+        let mut table = this.once.lock().unwrap();
+        let Waiters { table, poller } = &mut *table;
+
+        let mut this_listener = unsafe { Pin::new_unchecked(poller) };
+
+        // Insert into the table if we haven't already.
+        if this_listener.as_ref().is_empty() {
+            table.insert(this_listener.as_mut());
+        }
+
+        // Check for an event.
+        match table.register(this_listener, cx.waker()) {
+            RegisterResult::NoTask => panic!("polled future after completion"),
+            RegisterResult::Task => Poll::Pending,
+            RegisterResult::Notified(event) => Poll::Ready(event),
+        }
+    }
 }
 
 pin_project_lite::pin_project! {
@@ -79,6 +120,24 @@ impl<T: Event> Future for WaitOnce<'_, T> {
             RegisterResult::Task => Poll::Pending,
             RegisterResult::Notified(event) => Poll::Ready(event),
         }
+    }
+}
+
+pub struct WaitMany<T: Event> {
+    recv: BroadcastReceiver<T::Clonable>,
+}
+
+impl<T: Event> Stream for WaitMany<T> {
+    type Item = T::Clonable;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let item = Pin::new(&mut self.recv).poll_next(cx);
+
+        if let Poll::Ready(item) = &item {
+            debug_assert!(item.is_some());
+        }
+
+        item
     }
 }
 

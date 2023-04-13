@@ -22,17 +22,21 @@ fn main2(evl: EventLoop<()>) {
     let target = evl.window_target().clone();
     evl.block_on(async move {
         // Wait for a resume event to start.
-        target.resumed().wait_once().await;
+        target.resumed().await;
 
         // Create a window.
         let window = Window::new().await.unwrap();
 
         // Print resize events.
         let print_resize = async {
-            loop {
-                let new_size = window.resized().wait_once().await;
-                println!("Window resized to {:?}", new_size);
-            }
+            window
+                .resized()
+                .wait_many()
+                .for_each(|new_size| {
+                    println!("Window resized to {:?}", new_size);
+                })
+                .await;
+            panic!("dont end");
         };
 
         // Wait for the window to close.
