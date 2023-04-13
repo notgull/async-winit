@@ -42,6 +42,9 @@ pub(crate) struct Reactor {
 
     /// The last timer ID we used.
     timer_id: AtomicUsize,
+
+    /// Registration for event loop events.
+    pub(crate) evl_registration: EvlRegistration,
 }
 
 enum TimerOp {
@@ -72,6 +75,7 @@ impl Reactor {
             timers: BTreeMap::new().into(),
             timer_op_queue: ConcurrentQueue::bounded(1024),
             timer_id: AtomicUsize::new(1),
+            evl_registration: EvlRegistration::new(),
         })
     }
 
@@ -223,11 +227,16 @@ impl Reactor {
 
         match event {
             Event::WindowEvent { window_id, event } => {
-                let mut windows = self.windows.lock().unwrap();
+                let windows = self.windows.lock().unwrap();
                 if let Some(registration) = windows.get(&window_id) {
                     registration.signal(event);
                 }
             }
+            Event::Resumed => {
+                self.evl_registration.resumed.run_with(&mut ());
+            }
+            Event::Suspended => self.evl_registration.suspended.run_with(&mut ()),
+
             _ => {}
         }
     }

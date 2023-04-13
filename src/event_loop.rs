@@ -1,5 +1,6 @@
 //! The [`EventLoop`] and associated structures.
 
+use crate::handler::Handler;
 use crate::reactor::{Proxy, Reactor};
 
 use std::cell::RefCell;
@@ -135,6 +136,18 @@ impl<T: 'static> EventLoopWindowTarget<T> {
     #[inline]
     pub fn exit(&self) {
         self.reactor.request_exit();
+    }
+
+    /// Get the handler for the `Resumed` event.
+    #[inline]
+    pub fn resumed(&self) -> &Handler<()> {
+        &self.reactor.evl_registration.resumed
+    }
+
+    /// Get the handler for the `Suspended` event.
+    #[inline]
+    pub fn suspended(&self) -> &Handler<()> {
+        &self.reactor.evl_registration.suspended
     }
 }
 

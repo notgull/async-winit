@@ -10,6 +10,7 @@ pub(crate) mod registration;
 
 use registration::Registration;
 use std::sync::Arc;
+use winit::dpi::PhysicalSize;
 
 #[doc(inline)]
 pub use winit::window::{Fullscreen, Icon, Theme, WindowButtons, WindowLevel};
@@ -173,5 +174,10 @@ impl Window {
     /// Get the handler for the `CloseRequested` event.
     pub fn close_requested(&self) -> &Handler<()> {
         &self.registration.close_requested
+    }
+
+    /// Get the handler for the `Resized` event.
+    pub fn resized(&self) -> &Handler<PhysicalSize<u32>> {
+        &self.registration.resized
     }
 }

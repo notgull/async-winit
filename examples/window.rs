@@ -3,6 +3,8 @@
 use async_winit::event_loop::{EventLoop, EventLoopBuilder};
 use async_winit::window::Window;
 
+use futures_lite::prelude::*;
+
 #[cfg(target_os = "android")]
 use async_winit::platform::android::activity::AndroidApp;
 
@@ -19,11 +21,22 @@ fn android_main(app: AndroidApp) {
 fn main2(evl: EventLoop<()>) {
     let target = evl.window_target().clone();
     evl.block_on(async move {
+        // Wait for a resume event to start.
+        target.resumed().wait_once().await;
+
         // Create a window.
         let window = Window::new().await.unwrap();
 
+        // Print resize events.
+        let print_resize = async {
+            loop {
+                let new_size = window.resized().wait_once().await;
+                println!("Window resized to {:?}", new_size);
+            }
+        };
+
         // Wait for the window to close.
-        window.close_requested().wait_once().await;
+        window.close_requested().wait_once().or(print_resize).await;
 
         // Exit.
         target.exit();
