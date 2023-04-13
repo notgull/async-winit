@@ -1,5 +1,6 @@
 //! The [`EventLoop`] and associated structures.
 
+use crate::handler::Handler;
 use crate::reactor::{Proxy, Reactor};
 
 use std::cell::RefCell;
@@ -13,6 +14,8 @@ use std::task::{Context, Poll, Wake, Waker};
 use winit::event::Event;
 #[doc(inline)]
 pub use winit::event_loop::{ControlFlow, DeviceEventFilter, EventLoopClosed};
+
+pub(crate) mod registration;
 
 pub(crate) enum Message<T> {
     User(T),

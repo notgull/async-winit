@@ -1,8 +1,9 @@
 //! The shared reactor used by the runtime.
 
+use crate::event_loop::registration::Registration as EvlRegistration;
 use crate::event_loop::Message;
 use crate::oneoff::Complete;
-use crate::window::registration::Registration;
+use crate::window::registration::Registration as WinRegistration;
 use crate::window::WindowBuilder;
 
 use std::collections::{BTreeMap, HashMap};
@@ -26,7 +27,7 @@ pub(crate) struct Reactor {
     evl_ops: (Sender<EventLoopOp>, Receiver<EventLoopOp>),
 
     /// The list of windows.
-    windows: Mutex<HashMap<WindowId, Arc<Registration>>>,
+    windows: Mutex<HashMap<WindowId, Arc<WinRegistration>>>,
 
     /// The event loop proxy.
     ///
@@ -122,9 +123,9 @@ impl Reactor {
     }
 
     /// Insert a window into the window list.
-    pub(crate) fn insert_window(&self, id: WindowId) -> Arc<Registration> {
+    pub(crate) fn insert_window(&self, id: WindowId) -> Arc<WinRegistration> {
         let mut windows = self.windows.lock().unwrap();
-        let registration = Arc::new(Registration::new());
+        let registration = Arc::new(WinRegistration::new());
         windows.insert(id, registration.clone());
         registration
     }
