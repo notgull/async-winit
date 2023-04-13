@@ -1,7 +1,7 @@
 //! Use [`winit`] like the `async` runtime you've always wanted.
 
 // Private modules.
-//mod handler;
+mod handler;
 mod oneoff;
 mod reactor;
 mod timer;
@@ -15,4 +15,5 @@ pub mod window;
 #[doc(inline)]
 pub use winit::{dpi, error, event, monitor};
 
+pub use handler::{Event, Handler};
 pub use timer::Timer;
