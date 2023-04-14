@@ -234,12 +234,12 @@ impl<T: 'static> EventLoop<T> {
             if wake {
                 // Enter the sleeping state.
                 notifier.awake.store(false, Ordering::SeqCst);
+            }
 
-                // Check the notification.
-                if notifier.notified.swap(false, Ordering::SeqCst) {
-                    // We were notified, so we should poll the future.
-                    poll_once();
-                }
+            // Check the notification.
+            if notifier.notified.swap(false, Ordering::SeqCst) {
+                // We were notified, so we should poll the future.
+                poll_once();
             }
 
             // Set the control flow.
