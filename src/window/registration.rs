@@ -117,7 +117,7 @@ pub(crate) struct Registration {
     pub(crate) keyboard_input: Handler<KeyboardInput>,
 
     /// `Event::ModifiersState`
-    pub(crate) modifiers_state: Handler<ModifiersState>,
+    pub(crate) modifiers_changed: Handler<ModifiersState>,
 
     /// `Event::Ime`
     pub(crate) ime: Handler<Ime>,
@@ -176,7 +176,7 @@ impl Registration {
             focused: Handler::new(),
             keyboard_input: Handler::new(),
             received_character: Handler::new(),
-            modifiers_state: Handler::new(),
+            modifiers_changed: Handler::new(),
             ime: Handler::new(),
             cursor_entered: Handler::new(),
             cursor_left: Handler::new(),
@@ -233,7 +233,7 @@ impl Registration {
                 input,
                 is_synthetic,
             }),
-            WindowEvent::ModifiersChanged(mut mods) => self.modifiers_state.run_with(&mut mods),
+            WindowEvent::ModifiersChanged(mut mods) => self.modifiers_changed.run_with(&mut mods),
             WindowEvent::MouseInput {
                 device_id,
                 state,

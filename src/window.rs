@@ -11,6 +11,7 @@ pub(crate) mod registration;
 use registration::Registration;
 use std::sync::Arc;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::DeviceId;
 
 #[doc(inline)]
 pub use winit::window::{Fullscreen, Icon, Theme, WindowButtons, WindowLevel};
@@ -191,5 +192,103 @@ impl Window {
         &self.registration.moved
     }
 
-    // TODO Docs
+    /// Get handler for the `Destroyed` event.
+    pub fn destroyed(&self) -> &Handler<()> {
+        &self.registration.destroyed
+    }
+
+    /// Get the handler for the `Focused` event.
+    pub fn focused(&self) -> &Handler<bool> {
+        &self.registration.focused
+    }
+
+    /// Get the handler for the `KeyboardInput` event.
+    pub fn keyboard_input(&self) -> &Handler<crate::event::KeyboardInput> {
+        &self.registration.keyboard_input
+    }
+
+    /// Get the handler for the `ModifiersChanged` event.
+    pub fn modifiers_changed(&self) -> &Handler<crate::event::ModifiersState> {
+        &self.registration.modifiers_changed
+    }
+
+    /// Get the handler for the `ReceivedCharacter` event.
+    pub fn received_character(&self) -> &Handler<char> {
+        &self.registration.received_character
+    }
+
+    /// Get the handler for the `Ime` event.
+    pub fn ime(&self) -> &Handler<crate::event::Ime> {
+        &self.registration.ime
+    }
+
+    /// Get the handler for the `CursorMoved` event.
+    pub fn cursor_moved(&self) -> &Handler<crate::event::CursorMoved> {
+        &self.registration.cursor_moved
+    }
+
+    /// Get the handler for the `CursorEntered` event.
+    pub fn cursor_entered(&self) -> &Handler<DeviceId> {
+        &self.registration.cursor_entered
+    }
+
+    /// Get the handler for the `CursorLeft` event.
+    pub fn cursor_left(&self) -> &Handler<DeviceId> {
+        &self.registration.cursor_left
+    }
+
+    /// Get the handle for the `MouseWheel` event.
+    pub fn mouse_wheel(&self) -> &Handler<crate::event::MouseWheel> {
+        &self.registration.mouse_wheel
+    }
+
+    /// Get the handle for the `MouseInput` event.
+    pub fn mouse_input(&self) -> &Handler<crate::event::MouseInput> {
+        &self.registration.mouse_input
+    }
+
+    /// Get the handle for the `TouchpadMagnify` event.
+    pub fn touchpad_magnify(&self) -> &Handler<crate::event::TouchpadMagnify> {
+        &self.registration.touchpad_magnify
+    }
+
+    /// Get the handle for the `TouchpadPressure` event.
+    pub fn touchpad_pressure(&self) -> &Handler<crate::event::TouchpadPressure> {
+        &self.registration.touchpad_pressure
+    }
+
+    /// Get the handle for the `Touch` event.
+    pub fn touch(&self) -> &Handler<crate::event::Touch> {
+        &self.registration.touch
+    }
+
+    /// Get the handle for the `ScaleFactorChanged` event.
+    pub fn scale_factor_changed(&self) -> &Handler<crate::event::ScaleFactor> {
+        &self.registration.scale_factor_changed
+    }
+
+    /// Get the handle for the `TouchpadRotate` event.
+    pub fn touchpad_rotate(&self) -> &Handler<crate::event::TouchpadRotate> {
+        &self.registration.touchpad_rotate
+    }
+
+    /// Get the handle for the `SmartMagnify` event.
+    pub fn smart_magnify(&self) -> &Handler<DeviceId> {
+        &self.registration.smart_magnify
+    }
+
+    /// Get the handle for the `AxisMotion` event.
+    pub fn axis_motion(&self) -> &Handler<crate::event::AxisMotion> {
+        &self.registration.axis_motion
+    }
+
+    /// Get the handle for the `ThemeChanged` event.
+    pub fn theme_changed(&self) -> &Handler<Theme> {
+        &self.registration.theme_changed
+    }
+
+    /// Get the handle for the `Occulded` event.
+    pub fn occluded(&self) -> &Handler<bool> {
+        &self.registration.occluded
+    }
 }
