@@ -6,15 +6,19 @@ use std::marker::PhantomPinned;
 use std::mem;
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
 use async_broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
 use futures_lite::Stream;
 
 pub struct Handler<T: Event> {
+    inner: Pin<Arc<Inner<T>>>,
+}
+
+struct Inner<T: Event> {
     /// Queue of waiters for waiting once for a new event.
-    once: Pin<Box<Mutex<Waiters<T::Clonable>>>>,
+    once: Mutex<Waiters<T::Clonable>>,
 
     /// Channel for broadcasting events.
     broadcast: BroadcastSender<T::Clonable>,
@@ -30,36 +34,39 @@ impl<T: Event> Handler<T> {
         sender.set_overflow(true);
 
         Self {
-            once: Box::pin(Mutex::new(Waiters::new())),
-            broadcast: sender,
-            _recv,
+            inner: Arc::pin(Inner {
+                once: Mutex::new(Waiters::new()),
+                broadcast: sender,
+                _recv,
+            }),
         }
     }
 
     pub(crate) fn run_with(&self, event: &mut T::Unique<'_>) {
         let clonable = T::downgrade(event);
-        self.once
+        self.inner
+            .once
             .lock()
             .unwrap()
             .table
             .notify(usize::MAX, || clonable.clone());
 
         // Don't broadcast unless someone is listening.
-        if self.broadcast.receiver_count() > 1 {
-            self.broadcast.try_broadcast(clonable).ok();
+        if self.inner.broadcast.receiver_count() > 1 {
+            self.inner.broadcast.try_broadcast(clonable).ok();
         }
     }
 
-    pub fn wait_once(&self) -> WaitOnce<'_, T> {
+    pub fn wait_once(&self) -> WaitOnce<T> {
         WaitOnce {
-            table: self.once.as_ref(),
+            inner: self.inner.clone(),
             listener: Listener::new(),
         }
     }
 
     pub fn wait_many(&self) -> WaitMany<T> {
         WaitMany {
-            recv: self.broadcast.new_receiver(),
+            recv: self.inner.broadcast.new_receiver(),
         }
     }
 }
@@ -79,7 +86,7 @@ impl<T: Event> Future for &Handler<T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = *self.get_mut();
-        let mut table = this.once.lock().unwrap();
+        let mut table = this.inner.once.lock().unwrap();
         let Waiters { table, poller } = &mut *table;
 
         let mut this_listener = unsafe { Pin::new_unchecked(poller) };
@@ -99,9 +106,9 @@ impl<T: Event> Future for &Handler<T> {
 }
 
 pin_project_lite::pin_project! {
-    pub struct WaitOnce<'a, T: Event> {
+    pub struct WaitOnce<T: Event> {
         // Back-reference to the table.
-        table: Pin<&'a Mutex<Waiters<T::Clonable>>>,
+        inner: Pin<Arc<Inner<T>>>,
 
         // Listener for the next event.
         #[pin]
@@ -109,12 +116,13 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<T: Event> Future for WaitOnce<'_, T> {
+impl<T: Event> Future for WaitOnce<T> {
     type Output = T::Clonable;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
-        let mut table = this.table.get_ref().lock().unwrap();
+        let inner = this.inner.as_ref();
+        let mut table = inner.once.lock().unwrap();
 
         // Insert into the table if we haven't already.
         if this.listener.as_ref().is_empty() {
