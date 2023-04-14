@@ -1,7 +1,7 @@
 //! The shared reactor used by the runtime.
 
-use crate::event_loop::registration::Registration as EvlRegistration;
 use crate::event_loop::ReactorWaker;
+use crate::handler::Handler;
 use crate::oneoff::Complete;
 use crate::window::registration::Registration as WinRegistration;
 use crate::window::WindowBuilder;
@@ -44,7 +44,7 @@ pub(crate) struct Reactor {
     timer_id: AtomicUsize,
 
     /// Registration for event loop events.
-    pub(crate) evl_registration: EvlRegistration,
+    pub(crate) evl_registration: GlobalRegistration,
 }
 
 enum TimerOp {
@@ -75,7 +75,7 @@ impl Reactor {
             timers: BTreeMap::new().into(),
             timer_op_queue: ConcurrentQueue::bounded(1024),
             timer_id: AtomicUsize::new(1),
-            evl_registration: EvlRegistration::new(),
+            evl_registration: GlobalRegistration::new(),
         })
     }
 
@@ -266,6 +266,20 @@ impl EventLoopOp {
             EventLoopOp::BuildWindow { builder, waker } => {
                 waker.send(builder.as_winit_builder().build(target));
             }
+        }
+    }
+}
+
+pub(crate) struct GlobalRegistration {
+    pub(crate) resumed: Handler<()>,
+    pub(crate) suspended: Handler<()>,
+}
+
+impl GlobalRegistration {
+    pub(crate) fn new() -> Self {
+        Self {
+            resumed: Handler::new(),
+            suspended: Handler::new(),
         }
     }
 }

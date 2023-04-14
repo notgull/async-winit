@@ -17,8 +17,7 @@ use winit::event_loop::EventLoopProxy;
 #[doc(inline)]
 pub use winit::event_loop::{ControlFlow, DeviceEventFilter, EventLoopClosed};
 
-pub(crate) mod registration;
-
+/// Used to indicate that we need to wake up the event loop.
 pub(crate) struct Wakeup;
 
 /// Provides a way to retrieve events from the system and from the windows that were registered to
@@ -168,7 +167,7 @@ impl EventLoop {
         poll_once();
 
         inner_loop.run(move |event, elwt, flow| {
-            let mut wake = false;
+            let mut falling_asleep = false;
 
             match &event {
                 Event::NewEvents(_) => {
@@ -180,13 +179,13 @@ impl EventLoop {
                 }
 
                 Event::MainEventsCleared => {
-                    wake = true;
+                    falling_asleep = true;
                 }
 
                 _ => {}
             }
 
-            if wake {
+            if falling_asleep {
                 for waker in wakers.drain(..) {
                     // Don't let a panicking waker blow everything up.
                     std::panic::catch_unwind(|| waker.wake()).ok();
@@ -198,7 +197,7 @@ impl EventLoop {
             reactor.drain_loop_queue(elwt);
             reactor.post_event(event);
 
-            if wake {
+            if falling_asleep {
                 // Enter the sleeping state.
                 notifier.awake.store(false, Ordering::SeqCst);
             }
