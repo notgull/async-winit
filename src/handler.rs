@@ -3,9 +3,10 @@
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::marker::PhantomPinned;
-use std::mem;
+use std::mem::{self, ManuallyDrop};
 use std::pin::Pin;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
@@ -13,7 +14,7 @@ use async_broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
 use futures_lite::Stream;
 
 pub struct Handler<T: Event> {
-    inner: Pin<Arc<Inner<T>>>,
+    inner: AtomicPtr<Inner<T>>,
 }
 
 struct Inner<T: Event> {
@@ -27,24 +28,34 @@ struct Inner<T: Event> {
     _recv: BroadcastReceiver<T::Clonable>,
 }
 
-impl<T: Event> Handler<T> {
-    pub(crate) fn new() -> Self {
-        let (mut sender, _recv) = async_broadcast::broadcast(16);
-        sender.set_await_active(false);
-        sender.set_overflow(true);
+impl<T: Event> Drop for Handler<T> {
+    fn drop(&mut self) {
+        let inner = *self.inner.get_mut();
 
+        if !inner.is_null() {
+            unsafe {
+                let inner = Arc::from_raw(inner);
+                drop(inner);
+            }
+        }
+    }
+}
+
+impl<T: Event> Handler<T> {
+    pub(crate) const fn new() -> Self {
         Self {
-            inner: Arc::pin(Inner {
-                once: Mutex::new(Waiters::new()),
-                broadcast: sender,
-                _recv,
-            }),
+            inner: AtomicPtr::new(std::ptr::null_mut()),
         }
     }
 
     pub(crate) fn run_with(&self, event: &mut T::Unique<'_>) {
+        let inner = match self.try_inner() {
+            Some(inner) => inner,
+            None => return,
+        };
+
         let clonable = T::downgrade(event);
-        self.inner
+        inner
             .once
             .lock()
             .unwrap()
@@ -52,22 +63,70 @@ impl<T: Event> Handler<T> {
             .notify(usize::MAX, || clonable.clone());
 
         // Don't broadcast unless someone is listening.
-        if self.inner.broadcast.receiver_count() > 1 {
-            self.inner.broadcast.try_broadcast(clonable).ok();
+        if inner.broadcast.receiver_count() > 1 {
+            inner.broadcast.try_broadcast(clonable).ok();
         }
     }
 
     pub fn wait_once(&self) -> WaitOnce<T> {
         WaitOnce {
-            inner: self.inner.clone(),
+            inner: unsafe {
+                Pin::new_unchecked(Arc::clone(&ManuallyDrop::new(Arc::from_raw(self.inner()))))
+            },
             listener: Listener::new(),
         }
     }
 
     pub fn wait_many(&self) -> WaitMany<T> {
+        let inner = unsafe { &*self.inner() };
+
         WaitMany {
-            recv: self.inner.broadcast.new_receiver(),
+            recv: inner.broadcast.new_receiver(),
         }
+    }
+
+    /// Try to get a reference to the inner event.
+    ///
+    /// Returns `None` if we haven't been initialized yet.
+    fn try_inner(&self) -> Option<&Inner<T>> {
+        let ptr = self.inner.load(Ordering::Acquire);
+        unsafe { ptr.as_ref() }
+    }
+
+    /// Get a reference to the inner event, initializing it if necessary.
+    fn inner(&self) -> *const Inner<T> {
+        let mut ptr = self.inner.load(Ordering::Acquire);
+
+        if ptr.is_null() {
+            // Create a new inner event.
+            let (mut sender, _recv) = async_broadcast::broadcast(16);
+            sender.set_await_active(false);
+            sender.set_overflow(true);
+            let new = Arc::new(Inner::<T> {
+                broadcast: sender,
+                _recv,
+                once: Mutex::new(Waiters::new()),
+            });
+
+            // Convert to a raw pointer.
+            let new_ptr = Arc::into_raw(new) as *mut Inner<T>;
+
+            // Try to swap it in.
+            ptr = self
+                .inner
+                .compare_exchange(ptr, new_ptr, Ordering::AcqRel, Ordering::Acquire)
+                .unwrap_or_else(|x| x);
+
+            if ptr.is_null() {
+                ptr = new_ptr;
+            } else {
+                unsafe {
+                    drop(Arc::from_raw(new_ptr));
+                }
+            }
+        }
+
+        ptr as _
     }
 }
 
@@ -86,7 +145,9 @@ impl<T: Event> Future for &Handler<T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = *self.get_mut();
-        let mut table = this.inner.once.lock().unwrap();
+        let inner = unsafe { &*this.inner() };
+
+        let mut table = inner.once.lock().unwrap();
         let Waiters { table, poller } = &mut *table;
 
         let mut this_listener = unsafe { Pin::new_unchecked(poller) };
