@@ -3,6 +3,8 @@
 use crate::handler::Handler;
 use crate::reactor::{EventLoopOp, Reactor};
 
+use futures_lite::prelude::*;
+
 use std::convert::Infallible;
 use std::future::Future;
 use std::ops;
@@ -202,6 +204,9 @@ impl EventLoop {
         let mut timeout = None;
         let mut wakers = vec![];
 
+        // Parker/unparker pair.
+        let (parker, unparker) = parking::pair();
+
         // Create a waker to wake us up.
         let notifier = Arc::new(ReactorWaker {
             proxy: Mutex::new(inner.create_proxy()),
@@ -211,19 +216,27 @@ impl EventLoop {
         let notifier_waker = Waker::from(notifier.clone());
         reactor.set_proxy(notifier.clone());
 
+        // Create another waker to hold us in the holding pattern.
+        let holding_waker = Waker::from(Arc::new(HoldingPattern {
+            reactor_waker: notifier.clone(),
+            unparker,
+        }));
+
         // We have to allocate the future on the heap to make it movable.
         let mut future = Box::pin(future);
 
         // Function for polling the future once.
-        let mut poll_once = move || {
-            let mut cx = Context::from_waker(&notifier_waker);
-            if let Poll::Ready(i) = future.as_mut().poll(&mut cx) {
-                match i {}
-            }
-        };
+        macro_rules! poll_once {
+            () => {
+                let mut cx = Context::from_waker(&notifier_waker);
+                if let Poll::Ready(i) = future.as_mut().poll(&mut cx) {
+                    match i {}
+                }
+            };
+        }
 
         // Poll once before starting to set up event handlers et al.
-        poll_once();
+        poll_once!();
 
         inner.run(move |event, elwt, flow| {
             let mut falling_asleep = false;
@@ -264,7 +277,32 @@ impl EventLoop {
             // Check the notification.
             if notifier.notified.swap(false, Ordering::SeqCst) {
                 // We were notified, so we should poll the future.
-                poll_once();
+                poll_once!();
+            }
+
+            // Should we enter a holding pattern?
+            if reactor.should_hold() {
+                // Make sure we keep polling the original future, in case they release the hold.
+                let holding_future = reactor.wait_for_hold().or({
+                    let future = future.as_mut();
+
+                    async move { match future.await {} }
+                });
+
+                // Poll until we're done.
+                futures_lite::pin!(holding_future);
+                loop {
+                    // Drain the queue of incoming requests.
+                    reactor.drain_loop_queue(elwt);
+
+                    let mut cx = Context::from_waker(&holding_waker);
+                    if let Poll::Ready(()) = holding_future.as_mut().poll(&mut cx) {
+                        break;
+                    }
+
+                    // We're not done yet, so park.
+                    parker.park();
+                }
             }
 
             // Set the control flow.
@@ -331,5 +369,22 @@ impl Wake for ReactorWaker {
 
     fn wake_by_ref(self: &Arc<Self>) {
         self.notify()
+    }
+}
+
+struct HoldingPattern {
+    reactor_waker: Arc<ReactorWaker>,
+    unparker: parking::Unparker,
+}
+
+impl Wake for HoldingPattern {
+    fn wake(self: Arc<Self>) {
+        self.reactor_waker.notify();
+        self.unparker.unpark();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.reactor_waker.notify();
+        self.unparker.unpark();
     }
 }

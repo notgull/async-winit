@@ -48,6 +48,12 @@ pub(crate) struct Reactor {
 
     /// Registration for event loop events.
     pub(crate) evl_registration: GlobalRegistration,
+
+    /// Number of active holds on processing new events.
+    hold_count: AtomicUsize,
+
+    /// People interested in no longer being held.
+    hold_waiters: event_listener::Event,
 }
 
 enum TimerOp {
@@ -79,6 +85,8 @@ impl Reactor {
             timer_op_queue: ConcurrentQueue::bounded(1024),
             timer_id: AtomicUsize::new(1),
             evl_registration: GlobalRegistration::new(),
+            hold_count: AtomicUsize::new(0),
+            hold_waiters: event_listener::Event::new(),
         })
     }
 
@@ -246,6 +254,40 @@ impl Reactor {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Increase the hold count by this number.
+    pub(crate) fn hold(&self, count: usize) {
+        self.hold_count.fetch_add(count, Ordering::SeqCst);
+    }
+
+    /// Decrease the hold count by one.
+    pub(crate) fn release_hold(&self) {
+        if self.hold_count.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.hold_waiters.notify_additional(usize::MAX);
+        }
+    }
+
+    /// Tell if we should loop in a holding pattern.
+    pub(crate) fn should_hold(&self) -> bool {
+        self.hold_count.load(Ordering::SeqCst) > 0
+    }
+
+    /// Wait for the holding pattern to end.
+    pub(crate) async fn wait_for_hold(&self) {
+        loop {
+            if self.should_hold() {
+                return;
+            }
+
+            let listener = self.hold_waiters.listen();
+
+            if self.should_hold() {
+                return;
+            }
+
+            listener.await;
         }
     }
 }
