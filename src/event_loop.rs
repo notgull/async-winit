@@ -3,7 +3,6 @@
 use crate::handler::Handler;
 use crate::reactor::{EventLoopOp, Reactor};
 
-use std::cell::RefCell;
 use std::convert::Infallible;
 use std::future::Future;
 use std::ops;
@@ -24,7 +23,7 @@ pub(crate) struct Wakeup;
 /// the events loop.
 pub struct EventLoop {
     /// The underlying event loop.
-    inner: RefCell<Option<winit::event_loop::EventLoop<Wakeup>>>,
+    inner: winit::event_loop::EventLoop<Wakeup>,
 
     /// The window target.
     window_target: EventLoopWindowTarget,
@@ -72,7 +71,7 @@ impl EventLoopBuilder {
                 reactor: Reactor::get(),
                 proxy: inner.create_proxy(),
             },
-            inner: RefCell::new(Some(inner)),
+            inner,
         }
     }
 }
@@ -164,20 +163,19 @@ impl EventLoop {
     /// This function can only be called once per event loop, despite taking `&self`. Calling this
     /// function twice will result in a panic.
     #[inline]
-    pub fn block_on(&self, future: impl Future<Output = Infallible> + 'static) -> ! {
-        let inner_loop = self
-            .inner
-            .borrow_mut()
-            .take()
-            .expect("Event loop already blocked on");
-        let reactor = self.window_target.reactor;
+    pub fn block_on(self, future: impl Future<Output = Infallible> + 'static) -> ! {
+        let Self {
+            inner,
+            window_target,
+        } = self;
+        let reactor = window_target.reactor;
 
         let mut timeout = None;
         let mut wakers = vec![];
 
         // Create a waker to wake us up.
         let notifier = Arc::new(ReactorWaker {
-            proxy: Mutex::new(inner_loop.create_proxy()),
+            proxy: Mutex::new(inner.create_proxy()),
             notified: AtomicBool::new(true),
             awake: AtomicBool::new(false),
         });
@@ -198,7 +196,7 @@ impl EventLoop {
         // Poll once before starting to set up event handlers et al.
         poll_once();
 
-        inner_loop.run(move |event, elwt, flow| {
+        inner.run(move |event, elwt, flow| {
             let mut falling_asleep = false;
 
             match &event {
