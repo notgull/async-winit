@@ -1,7 +1,7 @@
 //! The [`EventLoop`] and associated structures.
 
 use crate::handler::Handler;
-use crate::reactor::{Proxy, Reactor};
+use crate::reactor::Reactor;
 
 use std::cell::RefCell;
 use std::convert::Infallible;
@@ -238,7 +238,7 @@ impl ops::DerefMut for EventLoop {
     }
 }
 
-struct ReactorWaker {
+pub(crate) struct ReactorWaker {
     /// The proxy used to wake up the event loop.
     proxy: Mutex<EventLoopProxy<Wakeup>>,
 
@@ -249,8 +249,8 @@ struct ReactorWaker {
     awake: AtomicBool,
 }
 
-impl Proxy for ReactorWaker {
-    fn notify(&self) {
+impl ReactorWaker {
+    pub(crate) fn notify(&self) {
         // If we are already notified, don't notify again.
         if self.notified.swap(true, Ordering::SeqCst) {
             return;

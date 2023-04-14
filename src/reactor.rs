@@ -1,6 +1,7 @@
 //! The shared reactor used by the runtime.
 
 use crate::event_loop::registration::Registration as EvlRegistration;
+use crate::event_loop::ReactorWaker;
 use crate::oneoff::Complete;
 use crate::window::registration::Registration as WinRegistration;
 use crate::window::WindowBuilder;
@@ -31,7 +32,7 @@ pub(crate) struct Reactor {
     /// The event loop proxy.
     ///
     /// Used to wake up the event loop.
-    proxy: OnceLock<Arc<dyn Proxy + Send + Sync + 'static>>,
+    proxy: OnceLock<Arc<ReactorWaker>>,
 
     /// The timer wheel.
     timers: Mutex<BTreeMap<(Instant, usize), Waker>>,
@@ -79,7 +80,7 @@ impl Reactor {
     }
 
     /// Set the event loop proxy.
-    pub(crate) fn set_proxy(&self, proxy: Arc<dyn Proxy + Send + Sync + 'static>) {
+    pub(crate) fn set_proxy(&self, proxy: Arc<ReactorWaker>) {
         self.proxy.set(proxy).ok();
     }
 
@@ -244,12 +245,6 @@ impl Reactor {
             _ => {}
         }
     }
-}
-
-/// Trait used to abstract over the different event loop types.
-pub(crate) trait Proxy {
-    /// Notify the proxy with a wake-up.
-    fn notify(&self);
 }
 
 /// An operation to run in the main event loop thread.
