@@ -18,7 +18,7 @@ fn android_main(app: AndroidApp) {
     todo!()
 }
 
-fn main2(evl: EventLoop<()>) {
+fn main2(evl: EventLoop) {
     let target = evl.window_target().clone();
     evl.block_on(async move {
         // Wait for a resume event to start.

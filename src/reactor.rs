@@ -1,7 +1,6 @@
 //! The shared reactor used by the runtime.
 
 use crate::event_loop::registration::Registration as EvlRegistration;
-use crate::event_loop::Message;
 use crate::oneoff::Complete;
 use crate::window::registration::Registration as WinRegistration;
 use crate::window::WindowBuilder;
@@ -222,7 +221,7 @@ impl Reactor {
     }
 
     /// Post an event to the reactor.
-    pub(crate) fn post_event<T: 'static>(&self, event: winit::event::Event<'_, Message<T>>) {
+    pub(crate) fn post_event<T: 'static>(&self, event: winit::event::Event<'_, T>) {
         use winit::event::Event;
 
         match event {
