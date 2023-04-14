@@ -1,7 +1,7 @@
 //! The [`EventLoop`] and associated structures.
 
 use crate::handler::Handler;
-use crate::reactor::Reactor;
+use crate::reactor::{EventLoopOp, Reactor};
 
 use std::cell::RefCell;
 use std::convert::Infallible;
@@ -117,6 +117,38 @@ impl EventLoopWindowTarget {
     #[inline]
     pub fn suspended(&self) -> &Handler<()> {
         &self.reactor.evl_registration.suspended
+    }
+
+    /// Get the primary monitor.
+    #[inline]
+    pub async fn primary_monitor(&self) -> Option<winit::monitor::MonitorHandle> {
+        let (tx, rx) = crate::oneoff::oneoff();
+        self.reactor
+            .push_event_loop_op(EventLoopOp::PrimaryMonitor(tx))
+            .await;
+        rx.recv().await
+    }
+
+    /// Get the available monitors.
+    #[inline]
+    pub async fn available_monitors(&self) -> impl Iterator<Item = winit::monitor::MonitorHandle> {
+        let (tx, rx) = crate::oneoff::oneoff();
+        self.reactor
+            .push_event_loop_op(EventLoopOp::AvailableMonitors(tx))
+            .await;
+        rx.recv().await.into_iter()
+    }
+
+    /// Set the device event filter.
+    #[inline]
+    pub async fn set_device_event_filter(&self, filter: DeviceEventFilter) {
+        let (tx, rx) = crate::oneoff::oneoff();
+        self.reactor
+            .push_event_loop_op(EventLoopOp::SetDeviceFilter { filter, waker: tx })
+            .await;
+
+        // Wait for the filter to be set.
+        rx.recv().await;
     }
 }
 

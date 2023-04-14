@@ -1,7 +1,10 @@
 //! An example demonstrating windows.
 
+use std::time::Duration;
+
 use async_winit::event_loop::{EventLoop, EventLoopBuilder};
 use async_winit::window::Window;
+use async_winit::Timer;
 
 use futures_lite::prelude::*;
 
@@ -34,8 +37,22 @@ fn main2(evl: EventLoop) {
             })
         };
 
+        // Print the position every second.
+        let print_position = {
+            Timer::interval(Duration::from_secs(1))
+                .then(|_| window.inner_position())
+                .for_each(|posn| {
+                    println!("Window position: {:?}", posn);
+                })
+        };
+
         // Wait for the window to close.
-        window.close_requested().wait_once().or(print_resize).await;
+        window
+            .close_requested()
+            .wait_once()
+            .or(print_resize)
+            .or(print_position)
+            .await;
 
         // Exit.
         target.exit();

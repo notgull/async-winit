@@ -16,8 +16,11 @@ use async_channel::{Receiver, Sender};
 use concurrent_queue::ConcurrentQueue;
 use once_cell::sync::OnceCell as OnceLock;
 
-use winit::error::OsError;
-use winit::window::WindowId;
+use winit::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
+use winit::error::{NotSupportedError, OsError};
+use winit::event_loop::DeviceEventFilter;
+use winit::monitor::MonitorHandle;
+use winit::window::{Window, WindowId};
 
 pub(crate) struct Reactor {
     /// Begin exiting the event loop.
@@ -257,6 +260,138 @@ pub(crate) enum EventLoopOp {
         /// The window has been built.
         waker: Complete<Result<winit::window::Window, OsError>>,
     },
+
+    /// Get the primary monitor.
+    PrimaryMonitor(Complete<Option<MonitorHandle>>),
+
+    /// Get the list of monitors.
+    AvailableMonitors(Complete<Vec<MonitorHandle>>),
+
+    /// Set the device filter.
+    SetDeviceFilter {
+        /// The device filter.
+        filter: DeviceEventFilter,
+
+        /// The device filter has been set.
+        waker: Complete<()>,
+    },
+
+    /// Get the inner position of the window.
+    InnerPosition {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>>,
+    },
+
+    /// Get the outer position of the window.
+    OuterPosition {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>>,
+    },
+
+    /// Set the outer position.
+    SetOuterPosition {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The position.
+        position: Position,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get the inner size.
+    InnerSize {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<PhysicalSize<u32>>,
+    },
+
+    /// Set the inner size.
+    SetInnerSize {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The size.
+        size: Size,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get the outer size.
+    OuterSize {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<PhysicalSize<u32>>,
+    },
+
+    /// Set the minimum inner size.
+    SetMinInnerSize {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The size.
+        size: Option<Size>,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set the maximum inner size.
+    SetMaxInnerSize {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The size.
+        size: Option<Size>,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get the resize increments.
+    ResizeIncrements {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Option<PhysicalSize<u32>>>,
+    },
+
+    /// Set the resize increments.
+    SetResizeIncrements {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The size.
+        size: Option<Size>,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set the title.
+    SetTitle {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The title.
+        title: String,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
 }
 
 impl EventLoopOp {
@@ -265,6 +400,93 @@ impl EventLoopOp {
         match self {
             EventLoopOp::BuildWindow { builder, waker } => {
                 waker.send(builder.as_winit_builder().build(target));
+            }
+
+            EventLoopOp::PrimaryMonitor(waker) => {
+                waker.send(target.primary_monitor());
+            }
+
+            EventLoopOp::AvailableMonitors(waker) => {
+                waker.send(target.available_monitors().collect());
+            }
+
+            EventLoopOp::SetDeviceFilter { filter, waker } => {
+                target.set_device_event_filter(filter);
+                waker.send(());
+            }
+
+            EventLoopOp::InnerPosition { window, waker } => {
+                waker.send(window.inner_position());
+            }
+
+            EventLoopOp::OuterPosition { window, waker } => {
+                waker.send(window.outer_position());
+            }
+
+            EventLoopOp::SetOuterPosition {
+                window,
+                position,
+                waker,
+            } => {
+                window.set_outer_position(position);
+                waker.send(());
+            }
+
+            EventLoopOp::InnerSize { window, waker } => {
+                waker.send(window.inner_size());
+            }
+
+            EventLoopOp::SetInnerSize {
+                window,
+                size,
+                waker,
+            } => {
+                window.set_inner_size(size);
+                waker.send(());
+            }
+
+            EventLoopOp::OuterSize { window, waker } => {
+                waker.send(window.outer_size());
+            }
+
+            EventLoopOp::SetMinInnerSize {
+                window,
+                size,
+                waker,
+            } => {
+                window.set_min_inner_size(size);
+                waker.send(());
+            }
+
+            EventLoopOp::SetMaxInnerSize {
+                window,
+                size,
+                waker,
+            } => {
+                window.set_max_inner_size(size);
+                waker.send(());
+            }
+
+            EventLoopOp::ResizeIncrements { window, waker } => {
+                waker.send(window.resize_increments());
+            }
+
+            EventLoopOp::SetResizeIncrements {
+                window,
+                size,
+                waker,
+            } => {
+                window.set_resize_increments(size);
+                waker.send(());
+            }
+
+            EventLoopOp::SetTitle {
+                window,
+                title,
+                waker,
+            } => {
+                window.set_title(&title);
+                waker.send(());
             }
         }
     }

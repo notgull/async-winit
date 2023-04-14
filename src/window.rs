@@ -10,6 +10,8 @@ pub(crate) mod registration;
 
 use registration::Registration;
 use std::sync::Arc;
+use winit::error::NotSupportedError;
+
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::DeviceId;
 
@@ -98,7 +100,7 @@ impl WindowBuilder {
         let registration = Reactor::get().insert_window(inner.id());
 
         Ok(Window {
-            inner,
+            inner: Arc::new(inner),
             registration,
         })
     }
@@ -154,7 +156,7 @@ impl WindowBuilder {
 /// A window.
 pub struct Window {
     /// Underlying window.
-    inner: winit::window::Window,
+    inner: Arc<winit::window::Window>,
 
     /// Registration for the window.
     registration: Arc<Registration>,
@@ -172,6 +174,185 @@ impl Window {
         WindowBuilder::new().build().await
     }
 
+    /// Get a reference to the underlying window.
+    pub fn window(&self) -> &winit::window::Window {
+        &self.inner
+    }
+
+    /// Get the ID of the window.
+    pub fn id(&self) -> winit::window::WindowId {
+        self.inner.id()
+    }
+
+    /// Get the scale factor of the window.
+    pub fn scale_factor(&self) -> f64 {
+        self.inner.scale_factor()
+    }
+
+    /// Request a redraw.
+    pub fn request_redraw(&self) {
+        self.inner.request_redraw();
+    }
+
+    /// Get whether the window is visible.
+    pub fn is_visible(&self) -> Option<bool> {
+        self.inner.is_visible()
+    }
+}
+
+impl Window {
+    /// Get the inner position of the window.
+    pub async fn inner_position(&self) -> Result<PhysicalPosition<i32>, NotSupportedError> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::InnerPosition {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the outer position of the window.
+    pub async fn outer_position(&self) -> Result<PhysicalPosition<i32>, NotSupportedError> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::OuterPosition {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the outer position of the window.
+    pub async fn set_outer_position(&self, position: impl Into<Position>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetOuterPosition {
+                window: self.inner.clone(),
+                position: position.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the inner size of the window.
+    pub async fn inner_size(&self) -> PhysicalSize<u32> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::InnerSize {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the outer size of the window.
+    pub async fn outer_size(&self) -> PhysicalSize<u32> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::OuterSize {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the inner size of the window.
+    pub async fn set_inner_size(&self, size: impl Into<Size>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetInnerSize {
+                window: self.inner.clone(),
+                size: size.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the minimum inner size of the window.
+    pub async fn set_min_inner_size(&self, size: impl Into<Option<Size>>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetMinInnerSize {
+                window: self.inner.clone(),
+                size: size.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the maximum inner size of the window.
+    pub async fn set_max_inner_size(&self, size: impl Into<Option<Size>>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetMaxInnerSize {
+                window: self.inner.clone(),
+                size: size.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the resize increments of the window.
+    pub async fn resize_increments(&self) -> Option<PhysicalSize<u32>> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::ResizeIncrements {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the resize increments of the window.
+    pub async fn set_resize_increments(&self, size: impl Into<Option<Size>>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetResizeIncrements {
+                window: self.inner.clone(),
+                size: size.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the title of the window.
+    pub async fn set_title(&self, title: impl Into<String>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetTitle {
+                window: self.inner.clone(),
+                title: title.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+}
+
+/// Waiting for events.
+impl Window {
     /// Get the handler for the `RedrawRequested` event.
     pub fn redraw_requested(&self) -> &Handler<()> {
         &self.registration.redraw_requested
