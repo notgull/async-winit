@@ -71,7 +71,7 @@ impl Default for WindowAttributes {
 #[derive(Default)]
 pub struct WindowBuilder {
     attributes: WindowAttributes,
-    // TODO: Platform specific attributes.
+    pub(crate) platform: crate::platform::PlatformSpecific,
 }
 
 impl WindowBuilder {
@@ -89,7 +89,7 @@ impl WindowBuilder {
         let (tx, rx) = oneoff();
         Reactor::get()
             .push_event_loop_op(EventLoopOp::BuildWindow {
-                builder: self,
+                builder: Box::new(self),
                 waker: tx,
             })
             .await;
@@ -105,7 +105,7 @@ impl WindowBuilder {
         })
     }
 
-    pub(crate) fn as_winit_builder(&self) -> winit::window::WindowBuilder {
+    pub(crate) fn into_winit_builder(self) -> winit::window::WindowBuilder {
         let mut builder = winit::window::WindowBuilder::new();
 
         if let Some(size) = self.attributes.inner_size {
@@ -148,6 +148,8 @@ impl WindowBuilder {
             .with_content_protected(self.attributes.content_protected)
             .with_window_level(self.attributes.window_level)
             .with_active(self.attributes.active);
+
+        builder = self.platform.apply_to(builder);
 
         builder
     }

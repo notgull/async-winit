@@ -23,7 +23,7 @@ pub(crate) struct Wakeup;
 /// the events loop.
 pub struct EventLoop {
     /// The underlying event loop.
-    inner: winit::event_loop::EventLoop<Wakeup>,
+    pub(crate) inner: winit::event_loop::EventLoop<Wakeup>,
 
     /// The window target.
     window_target: EventLoopWindowTarget,
@@ -38,12 +38,19 @@ pub struct EventLoopWindowTarget {
 
     /// The event loop proxy.
     proxy: EventLoopProxy<Wakeup>,
+
+    /// Is this using wayland?
+    #[cfg(all(
+        unix,
+        not(any(target_os = "android", target_os = "macos", target_os = "ios")),
+    ))]
+    pub(crate) is_wayland: bool,
 }
 
 /// Object that allows for building the [`EventLoop`].
 pub struct EventLoopBuilder {
     /// The underlying builder.
-    inner: winit::event_loop::EventLoopBuilder<Wakeup>,
+    pub(crate) inner: winit::event_loop::EventLoopBuilder<Wakeup>,
 }
 
 impl Clone for EventLoopWindowTarget {
@@ -51,6 +58,11 @@ impl Clone for EventLoopWindowTarget {
         Self {
             reactor: self.reactor,
             proxy: self.proxy.clone(),
+            #[cfg(all(
+                unix,
+                not(any(target_os = "android", target_os = "macos", target_os = "ios")),
+            ))]
+            is_wayland: self.is_wayland,
         }
     }
 }
@@ -70,6 +82,23 @@ impl EventLoopBuilder {
             window_target: EventLoopWindowTarget {
                 reactor: Reactor::get(),
                 proxy: inner.create_proxy(),
+                #[cfg(all(
+                    unix,
+                    not(any(target_os = "android", target_os = "macos", target_os = "ios",)),
+                ))]
+                is_wayland: {
+                    cfg_if::cfg_if! {
+                        if #[cfg(feature = "x11")] {
+                            use winit::platform::x11::EventLoopWindowTargetExtX11;
+                            !inner.is_x11()
+                        } else if #[cfg(feature = "wayland")] {
+                            use winit::platform::wayland::EventLoopWindowTargetExtWayland;
+                            inner.is_wayland()
+                        } else {
+                            false
+                        }
+                    }
+                },
             },
             inner,
         }

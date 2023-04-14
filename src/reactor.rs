@@ -255,7 +255,7 @@ pub(crate) enum EventLoopOp {
     /// Build a window.
     BuildWindow {
         /// The window builder to build.
-        builder: WindowBuilder,
+        builder: Box<WindowBuilder>,
 
         /// The window has been built.
         waker: Complete<Result<winit::window::Window, OsError>>,
@@ -399,7 +399,7 @@ impl EventLoopOp {
     fn run<T: 'static>(self, target: &winit::event_loop::EventLoopWindowTarget<T>) {
         match self {
             EventLoopOp::BuildWindow { builder, waker } => {
-                waker.send(builder.as_winit_builder().build(target));
+                waker.send(builder.into_winit_builder().build(target));
             }
 
             EventLoopOp::PrimaryMonitor(waker) => {

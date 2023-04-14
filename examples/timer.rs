@@ -15,7 +15,8 @@ fn main() {
 
 #[cfg(target_os = "android")]
 fn android_main(app: AndroidApp) {
-    todo!()
+    use async_winit::platform::android::EventLoopBuilderExtAndroid as _;
+    main2(EventLoopBuilder::new().with_android_app(app).build())
 }
 
 fn main2(evl: EventLoop) {
