@@ -8,18 +8,8 @@ use async_winit::Timer;
 
 use futures_lite::prelude::*;
 
-#[cfg(target_os = "android")]
-use async_winit::platform::android::activity::AndroidApp;
-
-#[cfg(not(target_os = "android"))]
 fn main() {
     main2(EventLoopBuilder::new().build())
-}
-
-#[cfg(target_os = "android")]
-fn android_main(app: AndroidApp) {
-    use async_winit::platform::android::EventLoopBuilderExtAndroid as _;
-    main2(EventLoopBuilder::new().with_android_app(app).build())
 }
 
 fn main2(evl: EventLoop) {
