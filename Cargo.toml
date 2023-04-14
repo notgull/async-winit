@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["John Nunley <jtnunley01@gmail.com>"]
 description = "Use winit like an async runtime"
 repository = "https://github.com/notgull/async-winit"
-license-file = "./LICENSE-PROSPERITY.md"
+license = "AGPL-3.0-or-later"
 
 [dependencies]
 async-broadcast = "0.5.1"

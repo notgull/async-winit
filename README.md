@@ -6,6 +6,11 @@ WIP
 
 ## License 
 
-`async-winit` is dual-licensed under [the Prosperity License](https://prosperitylicense.com/versions/3.0.0) and the [Patron License](https://github.com/notgull/async-winit/blob/main/LICENSE-PATRON.md) for [sponsors](https://github.com/sponsors/notgull) and [contributors](https://github.com/notgull/async-winit/graphs/contributors).
+`async-winit` is free software: you can redistribute it and/or modify it under the terms of one of the following licenses:
 
-[Sponsors](https://github.com/sponsors/notgull) and [contributors](https://github.com/notgull/async-winit/graphs/contributors) are added to the [Patron License](https://github.com/notgull/async-winit/blob/main/LICENSE-PATRON.md) and they can ignore the any non-commercial rule of [the Prosperity License](https://prosperitylicense.com/versions/3.0.0) software (please take a look to the exception).
+- The [GNU Affero General Public License](https://github.com/notgull/async-winit/blob/main/LICENSE-AGPL.md) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+- The [Patron License](https://github.com/notgull/async-winit/blob/main/LICENSE-PATRON.md) for [sponsors](https://github.com/sponsors/notgull) and [contributors](https://github.com/notgull/async-winit/graphs/contributors), who can ignore the copyleft provisions of the GNU AGPL for this project.
+
+`async-winit` is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License and the Patron License for more details.
+
+You should have received a copy of the GNU Affero General Public License and the corresponding Patron License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
