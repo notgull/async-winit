@@ -4,17 +4,8 @@ Use `winit` like the `async` runtime you've always wanted.
 
 WIP
 
-## License
+## License 
 
-Licensed under either of
+`async-winit` is dual-licensed under [the Prosperity License](https://prosperitylicense.com/versions/3.0.0) and the [Patron License](https://github.com/notgull/async-winit/blob/main/LICENSE-PATRON.md) for [sponsors](https://github.com/sponsors/notgull) and [contributors](https://github.com/notgull/async-winit/graphs/contributors).
 
- * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
-
-#### Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.
+[Sponsors](https://github.com/sponsors/notgull) and [contributors](https://github.com/notgull/async-winit/graphs/contributors) are added to the [Patron License](https://github.com/notgull/async-winit/blob/main/LICENSE-PATRON.md) and they can ignore the any non-commercial rule of [the Prosperity License](https://prosperitylicense.com/versions/3.0.0) software (please take a look to the exception).
