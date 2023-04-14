@@ -44,7 +44,10 @@ impl<T: Event> Handler<T> {
             .table
             .notify(usize::MAX, || clonable.clone());
 
-        self.broadcast.try_broadcast(clonable).ok();
+        // Don't broadcast unless someone is listening.
+        if self.broadcast.receiver_count() > 1 {
+            self.broadcast.try_broadcast(clonable).ok();
+        }
     }
 
     pub fn wait_once(&self) -> WaitOnce<'_, T> {
