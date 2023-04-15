@@ -27,6 +27,7 @@ pub use winit::platform::windows::{
     IconExtWindows, MonitorHandleExtWindows, HINSTANCE, HMENU, HMONITOR, HWND,
 };
 
+use super::__private as sealed;
 use crate::event_loop::EventLoopBuilder;
 use crate::window::{Icon, Window, WindowBuilder};
 
@@ -37,7 +38,7 @@ use winit::platform::windows::{
 };
 
 /// Additional methods on `EventLoop` that are specific to Windows.
-pub trait EventLoopBuilderExtWindows {
+pub trait EventLoopBuilderExtWindows: sealed::EventLoopBuilderPrivate {
     /// Whether to allow the event loop to be created off of the main thread.
     ///
     /// By default, the window is only allowed to be created on the main
@@ -125,7 +126,7 @@ impl EventLoopBuilderExtWindows for EventLoopBuilder {
 }
 
 /// Additional methods on `Window` that are specific to Windows.
-pub trait WindowExtWindows {
+pub trait WindowExtWindows: sealed::WindowPrivate {
     /// Returns the HINSTANCE of the window
     fn hinstance(&self) -> HINSTANCE;
     /// Returns the native handle that is used by this window.
@@ -187,7 +188,7 @@ impl WindowExtWindows for Window {
 }
 
 /// Additional methods on `WindowBuilder` that are specific to Windows.
-pub trait WindowBuilderExtWindows {
+pub trait WindowBuilderExtWindows: sealed::WindowBuilderPrivate {
     /// Set an owner to the window to be created. Can be used to create a dialog box, for example.
     /// This only works when [`WindowBuilder::with_parent_window`] isn't called or set to `None`.
     /// Can be used in combination with [`WindowExtWindows::set_enable(false)`](WindowExtWindows::set_enable)

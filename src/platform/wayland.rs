@@ -22,6 +22,7 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 //! Platform-specific features for Wayland.
 
+use super::__private as sealed;
 use crate::event_loop::{EventLoopBuilder, EventLoopWindowTarget};
 use crate::window::{Window, WindowBuilder};
 
@@ -35,7 +36,7 @@ use winit::platform::wayland::{
 pub use winit::platform::wayland::MonitorHandleExtWayland;
 
 /// Additional methods on [`EventLoopWindowTarget`] that are specific to Wayland.
-pub trait EventLoopWindowTargetExtWayland {
+pub trait EventLoopWindowTargetExtWayland: sealed::EventLoopWindowTargetPrivate {
     /// True if the [`EventLoopWindowTarget`] uses Wayland.
     fn is_wayland(&self) -> bool;
 
@@ -63,7 +64,7 @@ impl EventLoopWindowTargetExtWayland for EventLoopWindowTarget {
 }
 
 /// Additional methods on [`EventLoopBuilder`] that are specific to Wayland.
-pub trait EventLoopBuilderExtWayland {
+pub trait EventLoopBuilderExtWayland: sealed::EventLoopBuilderPrivate {
     /// Force using Wayland.
     fn with_wayland(&mut self) -> &mut Self;
 
@@ -87,7 +88,7 @@ impl EventLoopBuilderExtWayland for EventLoopBuilder {
 }
 
 /// Additional methods on [`Window`] that are specific to Wayland.
-pub trait WindowExtWayland {
+pub trait WindowExtWayland: sealed::WindowPrivate {
     /// Returns a pointer to the `wl_surface` object of wayland that is used by this window.
     ///
     /// Returns `None` if the window doesn't use wayland (if it uses xlib for example).
@@ -116,7 +117,7 @@ impl WindowExtWayland for Window {
 }
 
 /// Additional methods on [`WindowBuilder`] that are specific to Wayland.
-pub trait WindowBuilderExtWayland {
+pub trait WindowBuilderExtWayland: sealed::WindowBuilderPrivate {
     /// Build window with the given name.
     ///
     /// The `general` name sets an application ID, which should match the `.desktop`

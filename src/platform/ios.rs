@@ -29,11 +29,12 @@ pub use winit::platform::ios::{Idiom, MonitorHandleExtIOS, ScreenEdge, ValidOrie
 
 use winit::platform::ios::{WindowBuilderExtIOS as _, WindowExtIOS as _};
 
+use super::__private as sealed;
 use crate::event_loop::EventLoop;
 use crate::window::{Window, WindowBuilder};
 
 /// Additional methods on [`EventLoop`] that are specific to iOS.
-pub trait EventLoopExtIOS {
+pub trait EventLoopExtIOS: sealed::EventLoopPrivate {
     /// Returns the [`Idiom`] (phone/tablet/tv/etc) for the current device.
     fn idiom(&self) -> Idiom;
 }
@@ -46,7 +47,7 @@ impl EventLoopExtIOS for EventLoop {
 }
 
 /// Additional methods on [`Window`] that are specific to iOS.
-pub trait WindowExtIOS {
+pub trait WindowExtIOS: sealed::WindowPrivate {
     /// Returns a pointer to the [`UIWindow`] that is used by this window.
     ///
     /// The pointer will become invalid when the [`Window`] is destroyed.
@@ -165,7 +166,7 @@ impl WindowExtIOS for Window {
 }
 
 /// Additional methods on [`WindowBuilder`] that are specific to iOS.
-pub trait WindowBuilderExtIOS {
+pub trait WindowBuilderExtIOS: sealed::WindowBuilderPrivate {
     /// Sets the [`contentScaleFactor`] of the underlying [`UIWindow`] to `scale_factor`.
     ///
     /// The default value is device dependent, and it's recommended GLES or Metal applications set

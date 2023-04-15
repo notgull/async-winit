@@ -29,11 +29,12 @@ use winit::platform::macos::{EventLoopBuilderExtMacOS as _, WindowExtMacOS as _}
 
 use std::os::raw::c_void;
 
+use super::__private as sealed;
 use crate::event_loop::EventLoopBuilder;
 use crate::window::{Window, WindowBuilder};
 
 /// Additional methods on [`Window`] that are specific to MacOS.
-pub trait WindowExtMacOS {
+pub trait WindowExtMacOS: sealed::WindowPrivate {
     /// Returns a pointer to the cocoa `NSWindow` that is used by this window.
     ///
     /// The pointer will become invalid when the [`Window`] is destroyed.
@@ -143,7 +144,7 @@ impl WindowExtMacOS for Window {
 /// - `with_titlebar_hidden`
 /// - `with_titlebar_buttons_hidden`
 /// - `with_fullsize_content_view`
-pub trait WindowBuilderExtMacOS {
+pub trait WindowBuilderExtMacOS: sealed::WindowBuilderPrivate {
     /// Enables click-and-drag behavior for the entire window, not just the titlebar.
     fn with_movable_by_window_background(self, movable_by_window_background: bool)
         -> WindowBuilder;
@@ -223,7 +224,7 @@ impl WindowBuilderExtMacOS for WindowBuilder {
     }
 }
 
-pub trait EventLoopBuilderExtMacOS {
+pub trait EventLoopBuilderExtMacOS: sealed::EventLoopBuilderPrivate {
     /// Sets the activation policy for the application.
     ///
     /// It is set to [`ActivationPolicy::Regular`] by default.

@@ -22,6 +22,7 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 //! X11-specific code.
 
+use super::__private as sealed;
 use crate::event_loop::{EventLoopBuilder, EventLoopWindowTarget};
 use crate::window::{Window, WindowBuilder};
 
@@ -34,7 +35,7 @@ use winit::platform::x11::{EventLoopBuilderExtX11 as _, WindowExtX11 as _};
 pub use winit::platform::x11::{register_xlib_error_hook, XWindowType, XlibErrorHook};
 
 /// Additional methods on [`EventLoopWindowTarget`] that are specific to X11.
-pub trait EventLoopWindowTargetExtX11 {
+pub trait EventLoopWindowTargetExtX11: sealed::EventLoopWindowTargetPrivate {
     /// True if the [`EventLoopWindowTarget`] uses X11.
     fn is_x11(&self) -> bool;
 }
@@ -47,7 +48,7 @@ impl EventLoopWindowTargetExtX11 for EventLoopWindowTarget {
 }
 
 /// Additional methods on [`EventLoopBuilder`] that are specific to X11.
-pub trait EventLoopBuilderExtX11 {
+pub trait EventLoopBuilderExtX11: sealed::EventLoopBuilderPrivate {
     /// Force using X11.
     fn with_x11(&mut self) -> &mut Self;
 
@@ -73,7 +74,7 @@ impl EventLoopBuilderExtX11 for EventLoopBuilder {
 }
 
 /// Additional methods on [`Window`] that are specific to X11.
-pub trait WindowExtX11 {
+pub trait WindowExtX11: sealed::WindowPrivate {
     /// Returns the ID of the [`Window`] xlib object that is used by this window.
     ///
     /// Returns `None` if the window doesn't use xlib (if it uses wayland for example).
@@ -115,7 +116,7 @@ impl WindowExtX11 for Window {
 }
 
 // Additional methods on [`WindowBuilder`] that are specific to X11.
-pub trait WindowBuilderExtX11 {
+pub trait WindowBuilderExtX11: sealed::WindowBuilderPrivate {
     fn with_x11_screen(self, screen_id: i32) -> Self;
 
     /// Build window with the given `general` and `instance` names.

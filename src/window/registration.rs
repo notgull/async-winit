@@ -98,17 +98,18 @@ pub struct ScaleFactorChanged {
     pub new_inner_size: PhysicalSize<u32>,
 }
 
-impl Event for ScaleFactor {
+impl crate::handler::EventSealed for ScaleFactor {
     type Clonable = ScaleFactorChanged;
     type Unique<'a> = ScaleFactorChanging<'a>;
 
-    fn downgrade(unique: &mut Self::Unique<'_>) -> Self::Clonable {
+    fn downgrade(unique: &mut Self::Unique<'_>, _: crate::handler::Internal) -> Self::Clonable {
         ScaleFactorChanged {
             scale_factor: unique.scale_factor,
             new_inner_size: *unique.new_inner_size,
         }
     }
 }
+impl Event for ScaleFactor {}
 
 pub(crate) struct Registration {
     /// `RedrawRequested`

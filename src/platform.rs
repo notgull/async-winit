@@ -78,3 +78,32 @@ cfg_if::cfg_if! {
         pub(crate) use windows::PlatformSpecific;
     }
 }
+
+mod __private {
+    use crate::event_loop::{EventLoop, EventLoopBuilder, EventLoopWindowTarget};
+    use crate::window::{Window, WindowBuilder};
+
+    #[doc(hidden)]
+    pub struct Internal(());
+
+    macro_rules! sealed_trait {
+        ($($name: ident $tname: ident)*) => {$(
+            #[doc(hidden)]
+            pub trait $tname {
+                fn __sealed_marker(i: Internal);
+            }
+
+            impl $tname for $name {
+                fn __sealed_marker(_: Internal) {}
+            }
+        )*}
+    }
+
+    sealed_trait! {
+        EventLoopWindowTarget EventLoopWindowTargetPrivate
+        EventLoop EventLoopPrivate
+        EventLoopBuilder EventLoopBuilderPrivate
+        Window WindowPrivate
+        WindowBuilder WindowBuilderPrivate
+    }
+}

@@ -36,6 +36,7 @@ use async_lock::Mutex as AsyncMutex;
 use futures_lite::{future, Stream};
 use slab::Slab;
 
+pub(crate) use __private::{EventSealed, Internal};
 use waiters::{Listener, RegisterResult, Waiters};
 
 pub struct Handler<T: Event> {
@@ -69,7 +70,7 @@ struct Inner<T: Event> {
 }
 
 type DirectListener<T> =
-    Box<dyn FnMut(&mut <T as Event>::Unique<'_>) -> DirectFuture + Send + 'static>;
+    Box<dyn FnMut(&mut <T as EventSealed>::Unique<'_>) -> DirectFuture + Send + 'static>;
 type DirectFuture = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
 
 struct HoldState<T> {
@@ -112,7 +113,7 @@ impl<T: Event> Handler<T> {
             None => return,
         };
 
-        let clonable = T::downgrade(event);
+        let clonable = T::downgrade(event, Internal::new());
         inner
             .once
             .lock()
@@ -150,7 +151,7 @@ impl<T: Event> Handler<T> {
                 // There should be no hold state; create one.
                 debug_assert!(hold_state.is_none());
                 *hold_state = Some(HoldState {
-                    data: T::downgrade(event),
+                    data: T::downgrade(event, Internal::new()),
                     gen,
                     waiters_left: held,
                     waker: Some(waker),
@@ -497,18 +498,34 @@ impl<T: Event> Drop for HeldGuard<'_, '_, T> {
     }
 }
 
-pub trait Event {
-    type Clonable: Clone + 'static;
-    type Unique<'a>: 'a;
+pub trait Event: EventSealed {}
 
-    fn downgrade(unique: &mut Self::Unique<'_>) -> Self::Clonable;
-}
+impl<T: Clone + 'static> Event for T {}
 
-impl<T: Clone + 'static> Event for T {
-    type Clonable = T;
-    type Unique<'a> = T;
+mod __private {
+    #[doc(hidden)]
+    pub struct Internal(());
 
-    fn downgrade(unique: &mut Self::Unique<'_>) -> Self::Clonable {
-        unique.clone()
+    impl Internal {
+        pub(crate) fn new() -> Self {
+            Internal(())
+        }
+    }
+
+    #[doc(hidden)]
+    pub trait EventSealed {
+        type Clonable: Clone + 'static;
+        type Unique<'a>: 'a;
+
+        fn downgrade(unique: &mut Self::Unique<'_>, i: Internal) -> Self::Clonable;
+    }
+
+    impl<T: Clone + 'static> EventSealed for T {
+        type Clonable = T;
+        type Unique<'a> = T;
+
+        fn downgrade(unique: &mut Self::Unique<'_>, _: Internal) -> Self::Clonable {
+            unique.clone()
+        }
     }
 }

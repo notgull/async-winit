@@ -22,6 +22,8 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 //! Android-specific platform code.
 
+use super::__private as sealed;
+
 #[doc(inline)]
 pub use winit::platform::android::activity;
 
@@ -31,7 +33,7 @@ use activity::AndroidApp;
 use winit::platform::android::EventLoopBuilderExtAndroid as _;
 use winit::window::WindowBuilder;
 
-pub trait EventLoopBuilderExtAndroid {
+pub trait EventLoopBuilderExtAndroid: sealed::EventLoopBuilderPrivate {
     /// Associates the `AndroidApp` that was passed to `android_main()` with the event loop
     ///
     /// This must be called on Android since the `AndroidApp` is not global state.
