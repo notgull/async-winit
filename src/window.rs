@@ -32,13 +32,17 @@ pub(crate) mod registration;
 
 use registration::Registration;
 use std::sync::Arc;
-use winit::error::NotSupportedError;
 
 use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::error::{ExternalError, NotSupportedError};
 use winit::event::DeviceId;
+use winit::monitor::MonitorHandle;
 
 #[doc(inline)]
-pub use winit::window::{Fullscreen, Icon, Theme, WindowButtons, WindowLevel};
+pub use winit::window::{
+    CursorGrabMode, CursorIcon, Fullscreen, Icon, ImePurpose, ResizeDirection, Theme,
+    UserAttentionType, WindowButtons, WindowLevel,
+};
 
 /// Attributes to use when creating a window.
 #[derive(Debug, Clone)]
@@ -230,11 +234,6 @@ impl Window {
     pub fn request_redraw(&self) {
         self.inner.request_redraw();
     }
-
-    /// Get whether the window is visible.
-    pub fn is_visible(&self) -> Option<bool> {
-        self.inner.is_visible()
-    }
 }
 
 impl Window {
@@ -380,6 +379,462 @@ impl Window {
             .push_event_loop_op(EventLoopOp::SetTitle {
                 window: self.inner.clone(),
                 title: title.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set whether the window is visible.
+    pub async fn set_visible(&self, visible: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetVisible {
+                window: self.inner.clone(),
+                visible,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the window's visibility.
+    pub async fn is_visible(&self) -> Option<bool> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Visible {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window's transparency.
+    pub async fn set_transparent(&self, transparent: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetTransparent {
+                window: self.inner.clone(),
+                transparent,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window's resizable property.
+    pub async fn set_resizable(&self, resizable: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetResizable {
+                window: self.inner.clone(),
+                resizable,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the window's resizable property.
+    pub async fn is_resizable(&self) -> bool {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Resizable {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window's minimization.
+    pub async fn set_minimized(&self, minimized: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetMinimized {
+                window: self.inner.clone(),
+                minimized,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the window's minimization.
+    pub async fn is_minimized(&self) -> Option<bool> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Minimized {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window's maximization.
+    pub async fn set_maximized(&self, maximized: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetMaximized {
+                window: self.inner.clone(),
+                maximized,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the window's maximization.
+    pub async fn is_maximized(&self) -> bool {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Maximized {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window's fullscreen state.
+    pub async fn set_fullscreen(&self, fullscreen: Option<Fullscreen>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetFullscreen {
+                window: self.inner.clone(),
+                fullscreen,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the fullscreen state of the window.
+    pub async fn fullscreen(&self) -> Option<Fullscreen> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Fullscreen {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window's decorations.
+    pub async fn set_decorations(&self, decorations: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetDecorated {
+                window: self.inner.clone(),
+                decorated: decorations,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the window's decorations.
+    pub async fn is_decorated(&self) -> bool {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Decorated {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window level.
+    pub async fn set_window_level(&self, level: WindowLevel) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetWindowLevel {
+                window: self.inner.clone(),
+                level,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window icon.
+    pub async fn set_window_icon(&self, icon: Option<Icon>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetWindowIcon {
+                window: self.inner.clone(),
+                icon,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the IME position.
+    pub async fn set_ime_position(&self, posn: impl Into<Position>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetImePosition {
+                window: self.inner.clone(),
+                position: posn.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set whether IME is allowed.
+    pub async fn set_ime_allowed(&self, allowed: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetImeAllowed {
+                window: self.inner.clone(),
+                allowed,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the IME purpose.
+    pub async fn set_ime_purpose(&self, purpose: ImePurpose) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetImePurpose {
+                window: self.inner.clone(),
+                purpose,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Focus the window.
+    pub async fn focus_window(&self) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::FocusWindow {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Tell whether the window is focused.
+    pub async fn is_focused(&self) -> bool {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Focused {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Request the user's attention.
+    pub async fn request_user_attention(&self, request_type: Option<UserAttentionType>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::RequestUserAttention {
+                window: self.inner.clone(),
+                request_type,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window's theme.
+    pub async fn set_theme(&self, theme: Option<Theme>) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetTheme {
+                window: self.inner.clone(),
+                theme,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the window's theme.
+    pub async fn theme(&self) -> Option<Theme> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Theme {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the window's protected content.
+    pub async fn set_content_protected(&self, protected: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetProtectedContent {
+                window: self.inner.clone(),
+                protected,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the title of the window.
+    pub async fn title(&self) -> String {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::Title {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the cursor icon.
+    pub async fn set_cursor_icon(&self, icon: CursorIcon) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetCursorIcon {
+                window: self.inner.clone(),
+                icon,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the cursor position.
+    pub async fn set_cursor_position(
+        &self,
+        posn: impl Into<Position>,
+    ) -> Result<(), ExternalError> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetCursorPosition {
+                window: self.inner.clone(),
+                position: posn.into(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the cursor's grab mode.
+    pub async fn set_cursor_grab(&self, mode: CursorGrabMode) -> Result<(), ExternalError> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetCursorGrab {
+                window: self.inner.clone(),
+                mode,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the cursor's visibility.
+    pub async fn set_cursor_visible(&self, visible: bool) {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetCursorVisible {
+                window: self.inner.clone(),
+                visible,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Drag the window.
+    pub async fn drag_window(&self) -> Result<(), ExternalError> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::DragWindow {
+                window: self.inner.clone(),
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Drag-resize the window.
+    pub async fn drag_resize_window(
+        &self,
+        direction: ResizeDirection,
+    ) -> Result<(), ExternalError> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::DragResizeWindow {
+                window: self.inner.clone(),
+                direction,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Set the cursor hit test.
+    pub async fn set_cursor_hittest(&self, hit_test: bool) -> Result<(), ExternalError> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::SetCursorHitTest {
+                window: self.inner.clone(),
+                hit_test,
+                waker: tx,
+            })
+            .await;
+
+        rx.recv().await
+    }
+
+    /// Get the current monitor of this window.
+    pub async fn current_monitor(&self) -> Option<MonitorHandle> {
+        let (tx, rx) = oneoff();
+        Reactor::get()
+            .push_event_loop_op(EventLoopOp::CurrentMonitor {
+                window: self.inner.clone(),
                 waker: tx,
             })
             .await;

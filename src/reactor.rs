@@ -36,10 +36,13 @@ use concurrent_queue::ConcurrentQueue;
 use once_cell::sync::OnceCell as OnceLock;
 
 use winit::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
-use winit::error::{NotSupportedError, OsError};
+use winit::error::{ExternalError, NotSupportedError, OsError};
 use winit::event_loop::DeviceEventFilter;
 use winit::monitor::MonitorHandle;
-use winit::window::{Window, WindowId};
+use winit::window::{
+    CursorGrabMode, CursorIcon, Fullscreen, Icon, ImePurpose, ResizeDirection, Theme,
+    UserAttentionType, Window, WindowId, WindowLevel,
+};
 
 pub(crate) struct Reactor {
     /// Begin exiting the event loop.
@@ -419,6 +422,365 @@ pub(crate) enum EventLoopOp {
         /// Wake up the task.
         waker: Complete<()>,
     },
+
+    /// Set whether the window is transparent.
+    SetTransparent {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether the window is transparent.
+        transparent: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set whether or not the window is resizable.
+    SetResizable {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether or not the window is resizable.
+        resizable: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set whether the window is visible.
+    SetVisible {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether the window is visible.
+        visible: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get whether the window is resizable.
+    Resizable {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<bool>,
+    },
+
+    /// Get whether the window is visible.
+    Visible {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Option<bool>>,
+    },
+
+    /// Set whether the window is minimized.
+    SetMinimized {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether the window is minimized.
+        minimized: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get whether the window is minimized.
+    Minimized {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Option<bool>>,
+    },
+
+    /// Set whether the window is maximized.
+    SetMaximized {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether the window is maximized.
+        maximized: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get whether the window is maximized.
+    Maximized {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<bool>,
+    },
+
+    /// Set whether the window is fullscreen.
+    SetFullscreen {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether the window is fullscreen.
+        fullscreen: Option<Fullscreen>,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get whether the window is fullscreen.
+    Fullscreen {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Option<Fullscreen>>,
+    },
+
+    /// Set whether the window is decorated.
+    SetDecorated {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether the window is decorated.
+        decorated: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get whether the window is decorated.
+    Decorated {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<bool>,
+    },
+
+    /// Set the window level.
+    SetWindowLevel {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The window level.
+        level: WindowLevel,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set the window icon.
+    SetWindowIcon {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The window icon.
+        icon: Option<Icon>,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set the IME position.
+    SetImePosition {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The IME position.
+        position: Position,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set whether IME is allowed.
+    SetImeAllowed {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether IME is allowed.
+        allowed: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set the IME purpose.
+    SetImePurpose {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The IME purpose.
+        purpose: ImePurpose,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Focus the window.
+    FocusWindow {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Tell whether or not the window is focused.
+    Focused {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<bool>,
+    },
+
+    /// Request user attention.
+    RequestUserAttention {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The request.
+        request_type: Option<UserAttentionType>,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set the theme of the window.
+    SetTheme {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The theme.
+        theme: Option<Theme>,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get the theme of the window.
+    Theme {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Option<Theme>>,
+    },
+
+    /// Set whether the content is protected.
+    SetProtectedContent {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether the content is protected.
+        protected: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Get the title.
+    Title {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<String>,
+    },
+
+    /// Set the cursor icon.
+    SetCursorIcon {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The cursor icon.
+        icon: CursorIcon,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Set the cursor position.
+    SetCursorPosition {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The cursor position.
+        position: Position,
+
+        /// Wake up the task.
+        waker: Complete<Result<(), ExternalError>>,
+    },
+
+    /// Set the cursor grab.
+    SetCursorGrab {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The mode to grab the cursor.
+        mode: CursorGrabMode,
+
+        /// Wake up the task.
+        waker: Complete<Result<(), ExternalError>>,
+    },
+
+    /// Set whether the cursor is visible.
+    SetCursorVisible {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Whether the cursor is visible.
+        visible: bool,
+
+        /// Wake up the task.
+        waker: Complete<()>,
+    },
+
+    /// Drag the window.
+    DragWindow {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Result<(), ExternalError>>,
+    },
+
+    /// Drag-resize the window.
+    DragResizeWindow {
+        /// The window.
+        window: Arc<Window>,
+
+        direction: ResizeDirection,
+
+        /// Wake up the task.
+        waker: Complete<Result<(), ExternalError>>,
+    },
+
+    /// Set the cursor hit test.
+    SetCursorHitTest {
+        /// The window.
+        window: Arc<Window>,
+
+        /// The cursor hit test.
+        hit_test: bool,
+
+        /// Wake up the task.
+        waker: Complete<Result<(), ExternalError>>,
+    },
+
+    /// Get the current monitor.
+    CurrentMonitor {
+        /// The window.
+        window: Arc<Window>,
+
+        /// Wake up the task.
+        waker: Complete<Option<MonitorHandle>>,
+    },
 }
 
 impl EventLoopOp {
@@ -514,6 +876,240 @@ impl EventLoopOp {
             } => {
                 window.set_title(&title);
                 waker.send(());
+            }
+
+            EventLoopOp::SetWindowIcon {
+                window,
+                icon,
+                waker,
+            } => {
+                window.set_window_icon(icon);
+                waker.send(());
+            }
+
+            EventLoopOp::Fullscreen { window, waker } => {
+                waker.send(window.fullscreen());
+            }
+
+            EventLoopOp::SetFullscreen {
+                window,
+                fullscreen,
+                waker,
+            } => {
+                window.set_fullscreen(fullscreen);
+                waker.send(());
+            }
+
+            EventLoopOp::Maximized { window, waker } => {
+                waker.send(window.is_maximized());
+            }
+
+            EventLoopOp::SetMaximized {
+                window,
+                maximized,
+                waker,
+            } => {
+                window.set_maximized(maximized);
+                waker.send(());
+            }
+
+            EventLoopOp::Minimized { window, waker } => {
+                waker.send(window.is_minimized());
+            }
+
+            EventLoopOp::SetMinimized {
+                window,
+                minimized,
+                waker,
+            } => {
+                window.set_minimized(minimized);
+                waker.send(());
+            }
+
+            EventLoopOp::Visible { window, waker } => {
+                waker.send(window.is_visible());
+            }
+
+            EventLoopOp::SetVisible {
+                window,
+                visible,
+                waker,
+            } => {
+                window.set_visible(visible);
+                waker.send(());
+            }
+
+            EventLoopOp::Decorated { window, waker } => {
+                waker.send(window.is_decorated());
+            }
+
+            EventLoopOp::SetDecorated {
+                window,
+                decorated,
+                waker,
+            } => {
+                window.set_decorations(decorated);
+                waker.send(());
+            }
+
+            EventLoopOp::SetWindowLevel {
+                window,
+                level,
+                waker,
+            } => {
+                window.set_window_level(level);
+                waker.send(());
+            }
+
+            EventLoopOp::SetImePosition {
+                window,
+                position,
+                waker,
+            } => {
+                window.set_ime_position(position);
+                waker.send(());
+            }
+
+            EventLoopOp::SetImeAllowed {
+                window,
+                allowed,
+                waker,
+            } => {
+                window.set_ime_allowed(allowed);
+                waker.send(());
+            }
+
+            EventLoopOp::SetImePurpose {
+                window,
+                purpose,
+                waker,
+            } => {
+                window.set_ime_purpose(purpose);
+                waker.send(());
+            }
+
+            EventLoopOp::FocusWindow { window, waker } => {
+                window.focus_window();
+                waker.send(());
+            }
+
+            EventLoopOp::Focused { window, waker } => {
+                waker.send(window.has_focus());
+            }
+
+            EventLoopOp::RequestUserAttention {
+                window,
+                request_type,
+                waker,
+            } => {
+                window.request_user_attention(request_type);
+                waker.send(());
+            }
+
+            EventLoopOp::SetTheme {
+                window,
+                theme,
+                waker,
+            } => {
+                window.set_theme(theme);
+                waker.send(());
+            }
+
+            EventLoopOp::Theme { window, waker } => {
+                waker.send(window.theme());
+            }
+
+            EventLoopOp::SetProtectedContent {
+                window,
+                protected,
+                waker,
+            } => {
+                window.set_content_protected(protected);
+                waker.send(());
+            }
+
+            EventLoopOp::Title { window, waker } => {
+                waker.send(window.title());
+            }
+
+            EventLoopOp::SetCursorIcon {
+                window,
+                icon,
+                waker,
+            } => {
+                window.set_cursor_icon(icon);
+                waker.send(());
+            }
+
+            EventLoopOp::SetCursorGrab {
+                window,
+                mode,
+                waker,
+            } => {
+                waker.send(window.set_cursor_grab(mode));
+            }
+
+            EventLoopOp::SetCursorVisible {
+                window,
+                visible,
+                waker,
+            } => {
+                window.set_cursor_visible(visible);
+                waker.send(());
+            }
+
+            EventLoopOp::DragWindow { window, waker } => {
+                waker.send(window.drag_window());
+            }
+
+            EventLoopOp::DragResizeWindow {
+                window,
+                direction,
+                waker,
+            } => {
+                waker.send(window.drag_resize_window(direction));
+            }
+
+            EventLoopOp::SetCursorHitTest {
+                window,
+                hit_test,
+                waker,
+            } => {
+                waker.send(window.set_cursor_hittest(hit_test));
+            }
+
+            EventLoopOp::CurrentMonitor { window, waker } => {
+                waker.send(window.current_monitor());
+            }
+
+            EventLoopOp::SetTransparent {
+                window,
+                transparent,
+                waker,
+            } => {
+                window.set_transparent(transparent);
+                waker.send(());
+            }
+
+            EventLoopOp::SetResizable {
+                window,
+                resizable,
+                waker,
+            } => {
+                window.set_resizable(resizable);
+                waker.send(());
+            }
+
+            EventLoopOp::Resizable { window, waker } => {
+                waker.send(window.is_resizable());
+            }
+
+            EventLoopOp::SetCursorPosition {
+                window,
+                position,
+                waker,
+            } => {
+                waker.send(window.set_cursor_position(position));
             }
         }
     }
