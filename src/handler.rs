@@ -23,14 +23,15 @@ mod waiters;
 
 use std::future::Future;
 use std::mem::ManuallyDrop;
+use std::ops;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 
 use async_broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
 use async_lock::Mutex as AsyncMutex;
-use futures_lite::Stream;
+use futures_lite::{future, Stream};
 use slab::Slab;
 
 use waiters::{Listener, RegisterResult, Waiters};
@@ -46,6 +47,18 @@ struct Inner<T: Event> {
     /// List of direct listeners.
     direct: AsyncMutex<Slab<DirectListener<T>>>,
 
+    /// Number of holding listeners.
+    holding: AtomicUsize,
+
+    /// Generation of holding listeners.
+    holding_gen: AtomicU64,
+
+    /// Holding state.
+    holding_state: Mutex<Option<HoldState<T::Clonable>>>,
+
+    /// Listeners waiting on a holding state.
+    holding_waiters: event_listener::Event,
+
     /// Channel for broadcasting events.
     broadcast: BroadcastSender<T::Clonable>,
 
@@ -56,6 +69,20 @@ struct Inner<T: Event> {
 type DirectListener<T> =
     Box<dyn FnMut(&mut <T as Event>::Unique<'_>) -> DirectFuture + Send + 'static>;
 type DirectFuture = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
+
+struct HoldState<T> {
+    /// The actual data.
+    data: T,
+
+    /// The generation of the holding listeners.
+    gen: u64,
+
+    /// The number of holding listeners left to observe the event.
+    waiters_left: usize,
+
+    /// Waker for the top-level future.
+    waker: Option<Waker>,
+}
 
 impl<T: Event> Drop for Handler<T> {
     fn drop(&mut self) {
@@ -107,6 +134,42 @@ impl<T: Event> Handler<T> {
 
         for key in remove {
             let _ = direct.remove(key);
+        }
+
+        // Handle held listeners.
+        let held = inner.holding.load(Ordering::Acquire);
+        if held > 0 {
+            let gen = inner.holding_gen.fetch_add(1, Ordering::Acquire);
+            let waker = future::poll_fn(|cx| Poll::Ready(cx.waker().clone())).await;
+
+            {
+                let mut hold_state = inner.holding_state.lock().unwrap();
+
+                // There should be no hold state; create one.
+                debug_assert!(hold_state.is_none());
+                *hold_state = Some(HoldState {
+                    data: T::downgrade(event),
+                    gen,
+                    waiters_left: held,
+                    waker: Some(waker),
+                });
+            }
+
+            // Drop the lock and wake up a single waiter.
+            inner.holding_waiters.notify(1);
+
+            // Wait for the hold state to be consumed by waiters.
+            future::poll_fn(|cx| {
+                let mut hold_state = inner.holding_state.lock().unwrap();
+
+                if hold_state.is_none() {
+                    Poll::Ready(())
+                } else {
+                    hold_state.as_mut().unwrap().waker = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+            })
+            .await;
         }
     }
 
@@ -178,6 +241,10 @@ impl<T: Event> Handler<T> {
             let new = Arc::new(Inner::<T> {
                 broadcast: sender,
                 direct: AsyncMutex::new(Slab::new()),
+                holding: AtomicUsize::new(0),
+                holding_gen: AtomicU64::new(0),
+                holding_state: Mutex::new(None),
+                holding_waiters: event_listener::Event::new(),
                 _recv,
                 once: Mutex::new(Waiters::new()),
             });
@@ -276,6 +343,142 @@ impl<T: Event> Stream for WaitMany<T> {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.recv).poll_next(cx)
+    }
+}
+
+pub struct WaitGuard<'a, T: Event> {
+    /// Back reference to the inner state.
+    inner: &'a Inner<T>,
+
+    /// The generation of the event we're waiting for.
+    gen: u64,
+
+    /// Waiter for a new event.
+    waiter: Option<event_listener::EventListener>,
+}
+
+impl<T: Event> Drop for WaitGuard<'_, T> {
+    fn drop(&mut self) {
+        // Decrement the number of holders.
+        self.inner.holding.fetch_sub(1, Ordering::Release);
+
+        // If we're not waiting, we're done.
+        if self.waiter.is_none() {
+            return;
+        }
+
+        // If we're mid-waiter, make sure we aren't the last one.
+        let mut state_lock = self.inner.holding_state.lock().unwrap();
+        if let Some(ref mut state) = &mut *state_lock {
+            if state.gen != self.gen {
+                return;
+            }
+
+            // Decrement the count.
+            state.waiters_left -= 1;
+            if state.waiters_left == 0 {
+                // Wake up the top-level waiter.
+                if let Some(waker) = state.waker.take() {
+                    std::panic::catch_unwind(|| waker.wake()).ok();
+                }
+
+                *state_lock = None;
+            }
+        }
+    }
+}
+
+impl<'a, T: Event> WaitGuard<'a, T> {
+    pub async fn wait(&mut self) -> HeldGuard<'a, '_, T> {
+        loop {
+            {
+                // Try to acquire the lock.
+                let mut state_lock = self.inner.holding_state.lock().unwrap();
+
+                // If we are waiting...
+                if let Some(ref mut state) = &mut *state_lock {
+                    // ...and if it's in our generation...
+                    if state.gen == self.gen {
+                        // Update our generation.
+                        self.gen = self.inner.holding_gen.load(Ordering::Acquire);
+
+                        // ...then we can hold the lock.
+                        return HeldGuard {
+                            inner: self.inner,
+                            data: state.data.clone(),
+                            _guard: self,
+                        };
+                    } else {
+                        // We probably got an event intended for another listener.
+                        self.inner.holding_waiters.notify(1);
+
+                        // Update our generation.
+                        self.gen = self.inner.holding_gen.load(Ordering::Acquire);
+                    }
+                }
+            }
+
+            // Begin waiting.
+            match self.waiter.take() {
+                Some(listener) => listener.await,
+
+                None => {
+                    // Register and try again.
+                    self.waiter = Some(self.inner.holding_waiters.listen());
+                }
+            }
+        }
+    }
+}
+
+pub struct HeldGuard<'a, 'b, T: Event> {
+    /// Inner state.
+    inner: &'a Inner<T>,
+
+    /// The data type.
+    data: T::Clonable,
+
+    /// Back reference to the guard.
+    _guard: &'b mut WaitGuard<'a, T>,
+}
+
+impl<T: Event> ops::Deref for HeldGuard<'_, '_, T> {
+    type Target = T::Clonable;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T: Event> ops::DerefMut for HeldGuard<'_, '_, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl<T: Event> Drop for HeldGuard<'_, '_, T> {
+    fn drop(&mut self) {
+        // Decrement the number of holders.
+        let mut state_lock = self.inner.holding_state.lock().unwrap();
+        let state = state_lock.as_mut().unwrap();
+
+        state.waiters_left -= 1;
+
+        // If we're out of waiters, we're done.
+        if state.waiters_left == 0 {
+            // Wake up the top-level waiter.
+            if let Some(waker) = state.waker.take() {
+                std::panic::catch_unwind(|| waker.wake()).ok();
+            }
+
+            *state_lock = None;
+        } else {
+            // Otherwise, wake up the next waiter.
+            drop(state_lock);
+            self.inner.holding_waiters.notify(1);
+        }
     }
 }
 

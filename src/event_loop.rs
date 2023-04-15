@@ -324,31 +324,6 @@ impl EventLoop {
                 poll_once!();
             }
 
-            // Should we enter a holding pattern?
-            if reactor.should_hold() {
-                // Make sure we keep polling the original future, in case they release the hold.
-                let holding_future = reactor.wait_for_hold().or({
-                    let future = future.as_mut();
-
-                    async move { match future.await {} }
-                });
-
-                // Poll until we're done.
-                futures_lite::pin!(holding_future);
-                loop {
-                    // Drain the queue of incoming requests.
-                    reactor.drain_loop_queue(elwt);
-
-                    let mut cx = Context::from_waker(&holding_waker);
-                    if let Poll::Ready(()) = holding_future.as_mut().poll(&mut cx) {
-                        break;
-                    }
-
-                    // We're not done yet, so park.
-                    parker.park();
-                }
-            }
-
             // Set the control flow.
             if reactor.exit_requested() {
                 flow.set_exit()
