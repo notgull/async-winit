@@ -26,6 +26,7 @@ use async_winit::window::Window;
 use async_winit::Timer;
 
 use futures_lite::prelude::*;
+use softbuffer::GraphicsContext;
 
 fn main() {
     main2(EventLoopBuilder::new().build())
@@ -56,12 +57,48 @@ fn main2(evl: EventLoop) {
                 })
         };
 
+        // Drawing.
+        let draw = {
+            let window = window.clone();
+            let mut sb = None;
+            let mut buf = vec![];
+
+            async move {
+                let mut waiter = window.redraw_requested().wait_guard();
+
+                loop {
+                    let _guard = waiter.wait().await;
+                    let inner_size = window.window().inner_size();
+
+                    // Get the softbuffer.
+                    let graphics = match &mut sb {
+                        Some(graphics) => graphics,
+                        sb @ None => {
+                            let graphics =
+                                unsafe { GraphicsContext::new(&window, &window) }.unwrap();
+
+                            sb.insert(graphics)
+                        }
+                    };
+
+                    // Draw.
+                    let pixel = 0xAA11AA11;
+                    buf.resize(
+                        inner_size.width as usize * inner_size.height as usize,
+                        pixel,
+                    );
+                    graphics.set_buffer(&buf, inner_size.width as u16, inner_size.height as u16);
+                }
+            }
+        };
+
         // Wait for the window to close.
         window
             .close_requested()
             .wait_once()
             .or(print_resize)
             .or(print_position)
+            .or(draw)
             .await;
 
         // Exit.

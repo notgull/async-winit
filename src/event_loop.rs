@@ -266,6 +266,8 @@ impl EventLoop {
                     let mut cx = Context::from_waker(&holding_waker);
 
                     loop {
+                        notifier.awake.store(true, Ordering::SeqCst);
+
                         // Drain the incoming queue of requests.
                         // TODO: Poll timers as well?
                         reactor.drain_loop_queue(elwt);
@@ -274,6 +276,7 @@ impl EventLoop {
                             break i;
                         }
 
+                        notifier.awake.store(false, Ordering::SeqCst);
                         parker.park();
                     }
                 }};

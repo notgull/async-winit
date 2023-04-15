@@ -193,6 +193,18 @@ impl Drop for Window {
     }
 }
 
+unsafe impl raw_window_handle::HasRawDisplayHandle for Window {
+    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+        self.inner.raw_display_handle()
+    }
+}
+
+unsafe impl raw_window_handle::HasRawWindowHandle for Window {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        self.inner.raw_window_handle()
+    }
+}
+
 impl Window {
     /// Create a new window.
     pub async fn new() -> Result<Window, OsError> {

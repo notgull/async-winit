@@ -221,6 +221,19 @@ impl<T: Event> Handler<T> {
         let _ = direct.remove(id);
     }
 
+    pub fn wait_guard(&self) -> WaitGuard<'_, T> {
+        let inner = unsafe { &*self.inner() };
+
+        let gen = inner.holding_gen.load(Ordering::Acquire);
+        inner.holding.fetch_add(1, Ordering::AcqRel);
+
+        WaitGuard {
+            inner,
+            gen,
+            waiter: None,
+        }
+    }
+
     /// Try to get a reference to the inner event.
     ///
     /// Returns `None` if we haven't been initialized yet.
