@@ -258,6 +258,27 @@ impl EventLoop {
         poll_once!();
 
         inner.run(move |event, elwt, flow| {
+            // Function for blocking on holding.
+            macro_rules! block_on {
+                ($fut:expr) => {{
+                    let fut = $fut;
+                    futures_lite::pin!(fut);
+                    let mut cx = Context::from_waker(&holding_waker);
+
+                    loop {
+                        // Drain the incoming queue of requests.
+                        // TODO: Poll timers as well?
+                        reactor.drain_loop_queue(elwt);
+
+                        if let Poll::Ready(i) = fut.as_mut().poll(&mut cx) {
+                            break i;
+                        }
+
+                        parker.park();
+                    }
+                }};
+            }
+
             let mut falling_asleep = false;
 
             match &event {
@@ -283,10 +304,14 @@ impl EventLoop {
                 }
             }
 
-            // Drain the queue of incoming requests.
-            // TODO: Drain wakers to "wakers" and wake them all up at once.
-            reactor.drain_loop_queue(elwt);
-            reactor.post_event(event);
+            // Post the event, block on it and poll the future at the same time.
+            let posting = reactor.post_event(event).or({
+                let future = future.as_mut();
+
+                async move { match future.await {} }
+            });
+
+            block_on!(posting);
 
             if falling_asleep {
                 // Enter the sleeping state.

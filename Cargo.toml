@@ -10,6 +10,7 @@ license = "AGPL-3.0-or-later"
 [dependencies]
 async-broadcast = "0.5.1"
 async-channel = "1.8.0"
+async-lock = "2.7.0"
 cfg-if = "1.0.0"
 concurrent-queue = "2.2.0"
 event-listener = "2.5.3"
@@ -18,9 +19,11 @@ once_cell = "1.17.1"
 parking = "2.1.0"
 pin-project-lite = "0.2.9"
 raw-window-handle = "0.5.2"
+slab = "0.4.8"
 winit = { version = "0.28.3", default-features = false }
 
 [dev-dependencies]
+softbuffer = { version = "0.2.0", default-features = false, features = ["x11"] }
 winit = { version = "0.28.3", default-features = false, features = ["x11"] }
 
 [features]

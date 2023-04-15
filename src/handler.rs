@@ -29,7 +29,9 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use async_broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use async_lock::Mutex as AsyncMutex;
 use futures_lite::Stream;
+use slab::Slab;
 
 use waiters::{Listener, RegisterResult, Waiters};
 
@@ -41,12 +43,19 @@ struct Inner<T: Event> {
     /// Queue of waiters for waiting once for a new event.
     once: Mutex<Waiters<T::Clonable>>,
 
+    /// List of direct listeners.
+    direct: AsyncMutex<Slab<DirectListener<T>>>,
+
     /// Channel for broadcasting events.
     broadcast: BroadcastSender<T::Clonable>,
 
     /// The corresponding receiver, to keep it alive.
     _recv: BroadcastReceiver<T::Clonable>,
 }
+
+type DirectListener<T> =
+    Box<dyn FnMut(&mut <T as Event>::Unique<'_>) -> DirectFuture + Send + 'static>;
+type DirectFuture = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
 
 impl<T: Event> Drop for Handler<T> {
     fn drop(&mut self) {
@@ -68,7 +77,7 @@ impl<T: Event> Handler<T> {
         }
     }
 
-    pub(crate) fn run_with(&self, event: &mut T::Unique<'_>) {
+    pub(crate) async fn run_with(&self, event: &mut T::Unique<'_>) {
         let inner = match self.try_inner() {
             Some(inner) => inner,
             None => return,
@@ -84,6 +93,20 @@ impl<T: Event> Handler<T> {
         // Don't broadcast unless someone is listening.
         if inner.broadcast.receiver_count() > 1 {
             inner.broadcast.try_broadcast(clonable).ok();
+        }
+
+        // Handle direct listeners.
+        let mut direct = inner.direct.lock().await;
+        let mut remove = vec![];
+
+        for (key, listener) in direct.iter_mut() {
+            if listener(event).await {
+                remove.push(key);
+            }
+        }
+
+        for key in remove {
+            let _ = direct.remove(key);
         }
     }
 
@@ -102,6 +125,37 @@ impl<T: Event> Handler<T> {
         WaitMany {
             recv: inner.broadcast.new_receiver(),
         }
+    }
+
+    pub async fn wait_direct_async<
+        Fut: Future<Output = bool> + Send + 'static,
+        F: FnMut(&mut T::Unique<'_>) -> Fut + Send + 'static,
+    >(
+        &self,
+        mut f: F,
+    ) -> usize {
+        let inner = unsafe { &*self.inner() };
+        let mut direct = inner.direct.lock().await;
+
+        direct.insert(Box::new(move |u| Box::pin(f(u))))
+    }
+
+    pub async fn wait_direct(
+        &self,
+        mut f: impl FnMut(&mut T::Unique<'_>) -> bool + Send + 'static,
+    ) -> usize {
+        self.wait_direct_async(move |u| std::future::ready(f(u)))
+            .await
+    }
+
+    pub async fn remove_direct(&self, id: usize) {
+        let inner = match self.try_inner() {
+            Some(inner) => inner,
+            None => return,
+        };
+
+        let mut direct = inner.direct.lock().await;
+        let _ = direct.remove(id);
     }
 
     /// Try to get a reference to the inner event.
@@ -123,6 +177,7 @@ impl<T: Event> Handler<T> {
             sender.set_overflow(true);
             let new = Arc::new(Inner::<T> {
                 broadcast: sender,
+                direct: AsyncMutex::new(Slab::new()),
                 _recv,
                 once: Mutex::new(Waiters::new()),
             });

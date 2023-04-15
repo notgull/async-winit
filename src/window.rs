@@ -178,6 +178,7 @@ impl WindowBuilder {
 }
 
 /// A window.
+#[derive(Clone)]
 pub struct Window {
     /// Underlying window.
     inner: Arc<winit::window::Window>,

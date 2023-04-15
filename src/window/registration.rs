@@ -214,108 +214,148 @@ impl Registration {
         }
     }
 
-    pub(crate) fn signal(&self, event: WindowEvent) {
+    pub(crate) async fn signal(&self, event: WindowEvent<'_>) {
         match event {
-            WindowEvent::CloseRequested => self.close_requested.run_with(&mut ()),
-            WindowEvent::Resized(mut size) => self.resized.run_with(&mut size),
-            WindowEvent::Moved(mut posn) => self.moved.run_with(&mut posn),
+            WindowEvent::CloseRequested => self.close_requested.run_with(&mut ()).await,
+            WindowEvent::Resized(mut size) => self.resized.run_with(&mut size).await,
+            WindowEvent::Moved(mut posn) => self.moved.run_with(&mut posn).await,
             WindowEvent::AxisMotion {
                 device_id,
                 axis,
                 value,
-            } => self.axis_motion.run_with(&mut AxisMotion {
-                device_id,
-                axis,
-                value,
-            }),
-            WindowEvent::CursorEntered { mut device_id } => {
-                self.cursor_entered.run_with(&mut device_id)
+            } => {
+                self.axis_motion
+                    .run_with(&mut AxisMotion {
+                        device_id,
+                        axis,
+                        value,
+                    })
+                    .await
             }
-            WindowEvent::CursorLeft { mut device_id } => self.cursor_left.run_with(&mut device_id),
+            WindowEvent::CursorEntered { mut device_id } => {
+                self.cursor_entered.run_with(&mut device_id).await
+            }
+            WindowEvent::CursorLeft { mut device_id } => {
+                self.cursor_left.run_with(&mut device_id).await
+            }
             WindowEvent::CursorMoved {
                 device_id,
                 position,
                 ..
-            } => self.cursor_moved.run_with(&mut CursorMoved {
-                device_id,
-                position,
-            }),
-            WindowEvent::Destroyed => self.destroyed.run_with(&mut ()),
-            WindowEvent::Focused(mut foc) => self.focused.run_with(&mut foc),
-            WindowEvent::Ime(mut ime) => self.ime.run_with(&mut ime),
+            } => {
+                self.cursor_moved
+                    .run_with(&mut CursorMoved {
+                        device_id,
+                        position,
+                    })
+                    .await
+            }
+            WindowEvent::Destroyed => self.destroyed.run_with(&mut ()).await,
+            WindowEvent::Focused(mut foc) => self.focused.run_with(&mut foc).await,
+            WindowEvent::Ime(mut ime) => self.ime.run_with(&mut ime).await,
             WindowEvent::KeyboardInput {
                 device_id,
                 input,
                 is_synthetic,
-            } => self.keyboard_input.run_with(&mut KeyboardInput {
-                device_id,
-                input,
-                is_synthetic,
-            }),
-            WindowEvent::ModifiersChanged(mut mods) => self.modifiers_changed.run_with(&mut mods),
+            } => {
+                self.keyboard_input
+                    .run_with(&mut KeyboardInput {
+                        device_id,
+                        input,
+                        is_synthetic,
+                    })
+                    .await
+            }
+            WindowEvent::ModifiersChanged(mut mods) => {
+                self.modifiers_changed.run_with(&mut mods).await
+            }
             WindowEvent::MouseInput {
                 device_id,
                 state,
                 button,
                 ..
-            } => self.mouse_input.run_with(&mut MouseInput {
-                device_id,
-                state,
-                button,
-            }),
+            } => {
+                self.mouse_input
+                    .run_with(&mut MouseInput {
+                        device_id,
+                        state,
+                        button,
+                    })
+                    .await
+            }
             WindowEvent::MouseWheel {
                 device_id,
                 delta,
                 phase,
                 ..
-            } => self.mouse_wheel.run_with(&mut MouseWheel {
-                device_id,
-                delta,
-                phase,
-            }),
-            WindowEvent::Occluded(mut occ) => self.occluded.run_with(&mut occ),
-            WindowEvent::ReceivedCharacter(mut ch) => self.received_character.run_with(&mut ch),
+            } => {
+                self.mouse_wheel
+                    .run_with(&mut MouseWheel {
+                        device_id,
+                        delta,
+                        phase,
+                    })
+                    .await
+            }
+            WindowEvent::Occluded(mut occ) => self.occluded.run_with(&mut occ).await,
+            WindowEvent::ReceivedCharacter(mut ch) => {
+                self.received_character.run_with(&mut ch).await
+            }
             WindowEvent::ScaleFactorChanged {
                 scale_factor,
                 new_inner_size,
-            } => self
-                .scale_factor_changed
-                .run_with(&mut ScaleFactorChanging {
-                    scale_factor,
-                    new_inner_size,
-                }),
-            WindowEvent::SmartMagnify { mut device_id } => {
-                self.smart_magnify.run_with(&mut device_id)
+            } => {
+                self.scale_factor_changed
+                    .run_with(&mut ScaleFactorChanging {
+                        scale_factor,
+                        new_inner_size,
+                    })
+                    .await
             }
-            WindowEvent::ThemeChanged(mut theme) => self.theme_changed.run_with(&mut theme),
-            WindowEvent::Touch(mut touch) => self.touch.run_with(&mut touch),
+            WindowEvent::SmartMagnify { mut device_id } => {
+                self.smart_magnify.run_with(&mut device_id).await
+            }
+            WindowEvent::ThemeChanged(mut theme) => self.theme_changed.run_with(&mut theme).await,
+            WindowEvent::Touch(mut touch) => self.touch.run_with(&mut touch).await,
             WindowEvent::TouchpadMagnify {
                 device_id,
                 delta,
                 phase,
-            } => self.touchpad_magnify.run_with(&mut TouchpadMagnify {
-                device_id,
-                delta,
-                phase,
-            }),
+            } => {
+                self.touchpad_magnify
+                    .run_with(&mut TouchpadMagnify {
+                        device_id,
+                        delta,
+                        phase,
+                    })
+                    .await
+            }
             WindowEvent::TouchpadPressure {
                 device_id,
                 pressure,
                 stage,
-            } => self.touchpad_pressure.run_with(&mut TouchpadPressure {
-                device_id,
-                pressure,
-                stage,
-            }),
+            } => {
+                self.touchpad_pressure
+                    .run_with(&mut TouchpadPressure {
+                        device_id,
+                        pressure,
+                        stage,
+                    })
+                    .await
+            }
             WindowEvent::TouchpadRotate {
                 device_id,
                 delta,
                 phase,
-            } => self.touchpad_rotate.run_with(&mut TouchpadRotate {
-                device_id,
-                delta,
-                phase,
-            }),
+            } => {
+                self.touchpad_rotate
+                    .run_with(&mut TouchpadRotate {
+                        device_id,
+                        delta,
+                        phase,
+                    })
+                    .await
+            }
             _ => {}
         }
     }
