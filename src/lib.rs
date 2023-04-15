@@ -27,6 +27,7 @@ mod timer;
 
 // Modules we need to change for `async-winit`.
 pub mod event_loop;
+pub mod filter;
 pub mod platform;
 pub mod window;
 

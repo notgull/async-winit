@@ -22,23 +22,17 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 use crate::handler::Handler;
 use crate::reactor::{EventLoopOp, Reactor};
 
-use futures_lite::prelude::*;
-
 use std::convert::Infallible;
 use std::future::Future;
 use std::ops;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Wake, Waker};
 
-use winit::event::Event;
 use winit::event_loop::EventLoopProxy;
 
 #[doc(inline)]
 pub use winit::event_loop::{ControlFlow, DeviceEventFilter, EventLoopClosed};
 
 /// Used to indicate that we need to wake up the event loop.
-pub(crate) struct Wakeup;
+pub struct Wakeup;
 
 /// Provides a way to retrieve events from the system and from the windows that were registered to
 /// the events loop.
@@ -214,132 +208,13 @@ impl EventLoop {
     /// function twice will result in a panic.
     #[inline]
     pub fn block_on(self, future: impl Future<Output = Infallible> + 'static) -> ! {
-        let Self {
-            inner,
-            window_target,
-        } = self;
-        let reactor = window_target.reactor;
+        let inner = self.inner;
 
-        let mut timeout = None;
-        let mut wakers = vec![];
-
-        // Parker/unparker pair.
-        let (parker, unparker) = parking::pair();
-
-        // Create a waker to wake us up.
-        let notifier = Arc::new(ReactorWaker {
-            proxy: Mutex::new(inner.create_proxy()),
-            notified: AtomicBool::new(true),
-            awake: AtomicBool::new(false),
-        });
-        let notifier_waker = Waker::from(notifier.clone());
-        reactor.set_proxy(notifier.clone());
-
-        // Create another waker to hold us in the holding pattern.
-        let holding_waker = Waker::from(Arc::new(HoldingPattern {
-            reactor_waker: notifier.clone(),
-            unparker,
-        }));
-
-        // We have to allocate the future on the heap to make it movable.
         let mut future = Box::pin(future);
-
-        // Function for polling the future once.
-        macro_rules! poll_once {
-            () => {
-                let mut cx = Context::from_waker(&notifier_waker);
-                if let Poll::Ready(i) = future.as_mut().poll(&mut cx) {
-                    match i {}
-                }
-            };
-        }
-
-        // Poll once before starting to set up event handlers et al.
-        poll_once!();
+        let mut filter = crate::filter::Filter::new(&inner, future.as_mut());
 
         inner.run(move |event, elwt, flow| {
-            // Function for blocking on holding.
-            macro_rules! block_on {
-                ($fut:expr) => {{
-                    let fut = $fut;
-                    futures_lite::pin!(fut);
-                    let mut cx = Context::from_waker(&holding_waker);
-
-                    loop {
-                        notifier.awake.store(true, Ordering::SeqCst);
-
-                        // Drain the incoming queue of requests.
-                        // TODO: Poll timers as well?
-                        reactor.drain_loop_queue(elwt);
-
-                        if let Poll::Ready(i) = fut.as_mut().poll(&mut cx) {
-                            break i;
-                        }
-
-                        // Drain the incoming queue of requests.
-                        // TODO: Poll timers as well?
-                        reactor.drain_loop_queue(elwt);
-
-                        notifier.awake.store(false, Ordering::SeqCst);
-                        parker.park();
-                    }
-                }};
-            }
-
-            let mut falling_asleep = false;
-
-            match &event {
-                Event::NewEvents(_) => {
-                    // We are now awake.
-                    notifier.awake.store(true, Ordering::SeqCst);
-
-                    // Figure out how long we should wait for.
-                    timeout = reactor.process_timers(&mut wakers);
-                }
-
-                Event::MainEventsCleared => {
-                    falling_asleep = true;
-                }
-
-                _ => {}
-            }
-
-            if falling_asleep {
-                for waker in wakers.drain(..) {
-                    // Don't let a panicking waker blow everything up.
-                    std::panic::catch_unwind(|| waker.wake()).ok();
-                }
-            }
-
-            // Post the event, block on it and poll the future at the same time.
-            let posting = reactor.post_event(event).or({
-                let future = future.as_mut();
-
-                async move { match future.await {} }
-            });
-
-            block_on!(posting);
-
-            if falling_asleep {
-                // Enter the sleeping state.
-                notifier.awake.store(false, Ordering::SeqCst);
-            }
-
-            // Check the notification.
-            if notifier.notified.swap(false, Ordering::SeqCst) {
-                // We were notified, so we should poll the future.
-                poll_once!();
-            }
-
-            // Set the control flow.
-            if reactor.exit_requested() {
-                flow.set_exit()
-            } else {
-                match timeout {
-                    Some(timeout) => flow.set_wait_timeout(timeout),
-                    None => flow.set_wait(),
-                }
-            }
+            filter.handle_event(future.as_mut(), event, elwt, flow);
         })
     }
 }
@@ -357,60 +232,5 @@ impl ops::DerefMut for EventLoop {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.window_target
-    }
-}
-
-pub(crate) struct ReactorWaker {
-    /// The proxy used to wake up the event loop.
-    proxy: Mutex<EventLoopProxy<Wakeup>>,
-
-    /// Whether or not we are already notified.
-    notified: AtomicBool,
-
-    /// Whether or not the reactor is awake.
-    awake: AtomicBool,
-}
-
-impl ReactorWaker {
-    pub(crate) fn notify(&self) {
-        // If we are already notified, don't notify again.
-        if self.notified.swap(true, Ordering::SeqCst) {
-            return;
-        }
-
-        // If we are currently polling the event loop, don't notify.
-        if self.awake.load(Ordering::SeqCst) {
-            return;
-        }
-
-        // Wake up the reactor.
-        self.proxy.lock().unwrap().send_event(Wakeup).ok();
-    }
-}
-
-impl Wake for ReactorWaker {
-    fn wake(self: Arc<Self>) {
-        self.notify()
-    }
-
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.notify()
-    }
-}
-
-struct HoldingPattern {
-    reactor_waker: Arc<ReactorWaker>,
-    unparker: parking::Unparker,
-}
-
-impl Wake for HoldingPattern {
-    fn wake(self: Arc<Self>) {
-        self.reactor_waker.notify();
-        self.unparker.unpark();
-    }
-
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.reactor_waker.notify();
-        self.unparker.unpark();
     }
 }

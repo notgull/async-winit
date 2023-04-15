@@ -19,7 +19,7 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 //! The shared reactor used by the runtime.
 
-use crate::event_loop::ReactorWaker;
+use crate::filter::ReactorWaker;
 use crate::handler::Handler;
 use crate::oneoff::Complete;
 use crate::window::registration::Registration as WinRegistration;

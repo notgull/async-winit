@@ -19,6 +19,8 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 //! Handle incoming events.
 
+// TODO: Write more tests of holding.
+
 mod waiters;
 
 use std::future::Future;
