@@ -39,6 +39,26 @@ use slab::Slab;
 pub(crate) use __private::{EventSealed, Internal};
 use waiters::{Listener, RegisterResult, Waiters};
 
+/// An event handler.
+///
+/// This type is used to receive events from the GUI system. Whenever an event occurs, it is sent to
+/// all of the listeners of the corresponding event type. The listeners can then process the event
+/// asynchronously.
+///
+/// There are four ways to listen to events:
+///
+/// - Using the `wait_once()` function, which waits for a single instance of the event. However, there
+///   is a race condition where it can miss events in multithreaded environments where the event
+///   occurs between the time the event is received and the time the listener is registered. To avoid
+///   this, use one of the other methods. However, this method is the most efficient.
+/// - Using the `wait_many()` stream, which asynchronously iterates over events.
+/// - Using the `wait_direct[_async]()` function, which runs a closure in the event handler. This is
+///   good for use cases like drawing.
+/// - Using the `wait_guard()` function, which forces the event handler to stop until the event
+///   has been completely processed. This is good for use cases like handling suspends.
+///
+/// This type does not allocate unless you use any waiting functions; therefore, you only pay overhead
+/// for events that you use.
 pub struct Handler<T: Event> {
     inner: AtomicPtr<Inner<T>>,
 }
@@ -73,6 +93,7 @@ type DirectListener<T> =
     Box<dyn FnMut(&mut <T as EventSealed>::Unique<'_>) -> DirectFuture + Send + 'static>;
 type DirectFuture = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
 
+/// The state of the hold.
 struct HoldState<T> {
     /// The actual data.
     data: T,

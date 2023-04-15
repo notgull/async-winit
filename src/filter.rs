@@ -18,6 +18,10 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 */
 
 //! Filters, or the mechanism used internally by the event loop.
+//!
+//! This module is exposed such that it is possible to integrate `async-winit` easily with existing
+//! `winit` applications. The `Filter` type can be provided events, and will send those events to this
+//! library's event handlers.
 
 use std::cell::Cell;
 use std::future::Future;
@@ -36,11 +40,20 @@ use crate::reactor::Reactor;
 use winit::event::Event;
 use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 
+/// Either a function returned, or an associated future returned first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ReturnOrFinish<O, T> {
+    /// The function returned.
     Output(O),
+
+    /// The associated future returned first.
     FutureReturned(T),
 }
 
+/// The filter for passing events to `async` contexts.
+///
+/// This type takes events and passes them to the event handlers. It also handles the `async` contexts
+/// that are waiting for events.
 pub struct Filter {
     /// The timeout to wait for.
     timeout: Option<Duration>,
@@ -65,6 +78,9 @@ pub struct Filter {
 }
 
 impl Filter {
+    /// Create a new filter from an event loop.
+    ///
+    /// The future is polled once before returning to set up event handlers.
     pub fn new<F>(
         inner: &EventLoop<Wakeup>,
         future: Pin<&mut F>,
@@ -112,6 +128,8 @@ impl Filter {
     }
 
     /// Handle an event.
+    ///
+    /// This function will block on the future if it is in the holding pattern.
     pub fn handle_event<F>(
         &mut self,
         mut future: Pin<&mut F>,
@@ -245,7 +263,11 @@ impl ReactorWaker {
         }
 
         // Wake up the reactor.
-        self.proxy.lock().unwrap().send_event(Wakeup).ok();
+        self.proxy
+            .lock()
+            .unwrap()
+            .send_event(Wakeup { _private: () })
+            .ok();
     }
 }
 

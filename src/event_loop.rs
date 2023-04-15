@@ -18,12 +18,41 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 */
 
 //! The [`EventLoop`] and associated structures.
+//!
+//! There are three main differences between [`EventLoop`]s here and in [`winit`]:
+//!
+//! - Instead of `run` or `run_return`, there are `block_on` and `block_on_return`, which take a future
+//!   and run it to completion. Eent handling is done through the [`Handler`] structures instead.
+//! - Methods on [`EventLoop`] and [`EventLoopWindowTarget`] are `async`.
+//! - There is no `EventLoopProxy` type, since it is now obsolete with `async` blocks. Instead,
+//!   consider using an async channel to communicate with the event loop.
+//!
+//! ```no_run
+//! use async_winit::event_loop::EventLoop;
+//!
+//! struct MyCustomType;
+//!
+//! let (sender, receiver) = async_channel::unbounded();
+//!
+//! EventLoop::new().block_on(async move {
+//!     // Wait for a message from the channel.
+//!     let message = receiver.recv().await.unwrap();
+//! });
+//!
+//! // In another thread, send a message to the event loop.
+//! # futures_lite::future::block_on(async move {
+//! sender.send(MyCustomType).await.unwrap();
+//! # });
+//! ```
+//!
+//! [`Handler`]: crate::Handler
 
 use crate::filter::ReturnOrFinish;
 use crate::handler::Handler;
 use crate::reactor::{EventLoopOp, Reactor};
 
 use std::convert::Infallible;
+use std::fmt;
 use std::future::Future;
 use std::ops;
 
@@ -33,10 +62,32 @@ use winit::event_loop::EventLoopProxy;
 pub use winit::event_loop::{ControlFlow, DeviceEventFilter, EventLoopClosed};
 
 /// Used to indicate that we need to wake up the event loop.
-pub struct Wakeup;
+///
+/// This is a ZST used by the underlying event loop to wake up the event loop. It is not used
+/// directly by the user.
+///
+/// It is public because it is used by the [`Filter`] type. Generally, you don't need to use it.
+///
+/// [`Filter`]: crate::filter::Filter
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Wakeup {
+    pub(crate) _private: (),
+}
 
 /// Provides a way to retrieve events from the system and from the windows that were registered to
 /// the events loop.
+///
+/// The [`EventLoop`] is a "context" for the GUI system. More specifically, it represents a connection
+/// to the underlying GUI system. The [`EventLoop`] is the main object that you will use to drive
+/// the program. Most `async` functions in `async-winit` rely on the [`EventLoop`] to be currently
+/// running.
+///
+/// The [`EventLoop`] itself is `!Send` and `!Sync` due to underlying platform restrictions. However,
+/// [`EventLoopWindowTarget`]` and [`Window`] are both not only `Send` and `Sync`, but also cheaply
+/// clonable. This means that you can create a window on one thread, and then send it to another
+/// thread to be used.
+///
+/// [`Window`]: crate::window::Window
 pub struct EventLoop {
     /// The underlying event loop.
     pub(crate) inner: winit::event_loop::EventLoop<Wakeup>,
@@ -45,9 +96,18 @@ pub struct EventLoop {
     window_target: EventLoopWindowTarget,
 }
 
-/// A reference to the `EventLoop` that allows the user to create windows, among other things.
+impl fmt::Debug for EventLoop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("EventLoop { .. }")
+    }
+}
+
+/// A reference to the `EventLoop` that allows the user access to the underlying display connections.
 ///
-/// Unlike in `winit`, this type is cheaply clonable.
+/// Unlike in `winit`, this type is cheaply clonable. It is not actually used that often, since most of
+/// its previous use cases don't directly require the window target to be passed in. However, it is
+/// still useful for some things, like indicating the need to exit the application or getting
+/// available monitors.
 pub struct EventLoopWindowTarget {
     /// The associated reactor, cached for convenience.
     reactor: &'static Reactor,
@@ -63,10 +123,25 @@ pub struct EventLoopWindowTarget {
     pub(crate) is_wayland: bool,
 }
 
+impl fmt::Debug for EventLoopWindowTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("EventLoopWindowTarget { .. }")
+    }
+}
+
 /// Object that allows for building the [`EventLoop`].
+///
+/// This specifies options that affect the whole application, like the current Android app or whether
+/// to use the Wayland backend. You cannot create more than one [`EventLoop`] per application.
 pub struct EventLoopBuilder {
     /// The underlying builder.
     pub(crate) inner: winit::event_loop::EventLoopBuilder<Wakeup>,
+}
+
+impl fmt::Debug for EventLoopBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("EventLoopBuilder { .. }")
+    }
 }
 
 impl Clone for EventLoopWindowTarget {
@@ -92,6 +167,15 @@ impl EventLoopBuilder {
     }
 
     /// Builds a new event loop.
+    ///
+    /// In general, this function must be called on the same thread that `main()` is being run inside of.
+    /// This can be circumvented in some cases using platform specific options. See the [`platform`]
+    /// module for more information. Attempting to violate this property or create more than one event
+    /// loop per application will result in a panic.
+    ///
+    /// This function results in platform-specific backend initialization.
+    ///
+    /// [`platform`]: crate::platform
     pub fn build(&mut self) -> EventLoop {
         let inner = self.inner.build();
         EventLoop {
@@ -204,9 +288,6 @@ impl EventLoop {
     }
 
     /// Block on a future forever.
-    ///
-    /// This function can only be called once per event loop, despite taking `&self`. Calling this
-    /// function twice will result in a panic.
     #[inline]
     pub fn block_on(self, future: impl Future<Output = Infallible> + 'static) -> ! {
         let inner = self.inner;
