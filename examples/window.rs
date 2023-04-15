@@ -68,7 +68,7 @@ fn main2(evl: EventLoop) {
 
                 loop {
                     let _guard = waiter.wait().await;
-                    let inner_size = window.window().inner_size();
+                    let inner_size = window.inner_size().await;
 
                     // Get the softbuffer.
                     let graphics = match &mut sb {

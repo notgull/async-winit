@@ -276,6 +276,10 @@ impl EventLoop {
                             break i;
                         }
 
+                        // Drain the incoming queue of requests.
+                        // TODO: Poll timers as well?
+                        reactor.drain_loop_queue(elwt);
+
                         notifier.awake.store(false, Ordering::SeqCst);
                         parker.park();
                     }
