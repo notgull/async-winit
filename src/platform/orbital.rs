@@ -17,6 +17,9 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 */
 
+// This file is partially derived from `winit`, which was originally created by Pierre Krieger and
+// contributers. It was originally released under the MIT license.
+
 // No platform-specific orbital code yet.
 
 use winit::window::WindowBuilder;

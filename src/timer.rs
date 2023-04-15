@@ -17,6 +17,9 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 */
 
+// This file is partially derived from `async-io`, which was originally created by Stjepan Glavina
+// and contributers. It was originally released under the MIT license and Apache 2.0 license.
+
 //! Asynchronous timers.
 
 use crate::reactor::Reactor;
