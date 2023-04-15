@@ -19,7 +19,7 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 //! Filters, or the mechanism used internally by the event loop.
 
-use std::convert::Infallible;
+use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,6 +35,11 @@ use crate::reactor::Reactor;
 
 use winit::event::Event;
 use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
+
+pub enum ReturnOrFinish<O, T> {
+    Output(O),
+    FutureReturned(T),
+}
 
 pub struct Filter {
     /// The timeout to wait for.
@@ -60,9 +65,12 @@ pub struct Filter {
 }
 
 impl Filter {
-    pub fn new<F>(inner: &EventLoop<Wakeup>, future: Pin<&mut F>) -> Filter
+    pub fn new<F>(
+        inner: &EventLoop<Wakeup>,
+        future: Pin<&mut F>,
+    ) -> ReturnOrFinish<Filter, F::Output>
     where
-        F: Future<Output = Infallible>,
+        F: Future,
     {
         let reactor = Reactor::get();
 
@@ -89,10 +97,10 @@ impl Filter {
 
         let mut cx = Context::from_waker(&notifier_waker);
         if let Poll::Ready(i) = future.as_mut().poll(&mut cx) {
-            match i {}
+            return ReturnOrFinish::FutureReturned(i);
         }
 
-        Filter {
+        ReturnOrFinish::Output(Filter {
             timeout: None,
             wakers: vec![],
             parker,
@@ -100,7 +108,7 @@ impl Filter {
             notifier_waker,
             holding_waker,
             reactor,
-        }
+        })
     }
 
     /// Handle an event.
@@ -110,9 +118,12 @@ impl Filter {
         event: Event<'_, Wakeup>,
         elwt: &EventLoopWindowTarget<Wakeup>,
         flow: &mut ControlFlow,
-    ) where
-        F: Future<Output = Infallible>,
+    ) -> ReturnOrFinish<(), F::Output>
+    where
+        F: Future,
     {
+        let output = Cell::new(None);
+
         // Function for blocking on holding.
         macro_rules! block_on {
             ($fut:expr) => {{
@@ -128,6 +139,10 @@ impl Filter {
                     self.reactor.drain_loop_queue(elwt);
 
                     if let Poll::Ready(i) = fut.as_mut().poll(&mut cx) {
+                        if let Some(result) = output.take() {
+                            return ReturnOrFinish::FutureReturned(result);
+                        }
+
                         break i;
                     }
 
@@ -169,7 +184,11 @@ impl Filter {
         // Post the event, block on it and poll the future at the same time.
         let posting = self.reactor.post_event(event).or({
             let future = future.as_mut();
-            async move { match future.await {} }
+            let output = &output;
+
+            async move {
+                output.set(Some(future.await));
+            }
         });
 
         block_on!(posting);
@@ -184,19 +203,21 @@ impl Filter {
             // We were notified, so we should poll the future.
             let mut cx = Context::from_waker(&self.notifier_waker);
             if let Poll::Ready(i) = future.poll(&mut cx) {
-                match i {}
+                return ReturnOrFinish::FutureReturned(i);
             }
         }
 
         // Set the control flow.
         if self.reactor.exit_requested() {
-            flow.set_exit()
+            flow.set_exit();
         } else {
             match self.timeout {
                 Some(timeout) => flow.set_wait_timeout(timeout),
                 None => flow.set_wait(),
             }
         }
+
+        ReturnOrFinish::Output(())
     }
 }
 

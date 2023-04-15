@@ -19,6 +19,7 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 //! The [`EventLoop`] and associated structures.
 
+use crate::filter::ReturnOrFinish;
 use crate::handler::Handler;
 use crate::reactor::{EventLoopOp, Reactor};
 
@@ -211,7 +212,10 @@ impl EventLoop {
         let inner = self.inner;
 
         let mut future = Box::pin(future);
-        let mut filter = crate::filter::Filter::new(&inner, future.as_mut());
+        let mut filter = match crate::filter::Filter::new(&inner, future.as_mut()) {
+            ReturnOrFinish::FutureReturned(i) => match i {},
+            ReturnOrFinish::Output(f) => f,
+        };
 
         inner.run(move |event, elwt, flow| {
             filter.handle_event(future.as_mut(), event, elwt, flow);
