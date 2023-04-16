@@ -33,6 +33,8 @@ pub trait EventLoopExtRunReturn {
     ///
     /// Unlike [`EventLoop::block_on`], this function accepts non-`'static` (i.e. non-`move`) closures
     /// and returns control flow to the caller when `control_flow` is set to [`ControlFlow::Exit`].
+    ///
+    /// [`ControlFlow::Exit`]: crate::event_loop::ControlFlow::Exit
     fn block_on_return<F>(&mut self, future: F) -> ReturnOrFinish<i32, F::Output>
     where
         F: Future;

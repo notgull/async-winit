@@ -197,6 +197,7 @@ impl<T: Event> Handler<T> {
         }
     }
 
+    /// Wait for the next event.
     pub fn wait_once(&self) -> WaitOnce<T> {
         WaitOnce {
             inner: unsafe {
@@ -206,6 +207,7 @@ impl<T: Event> Handler<T> {
         }
     }
 
+    /// A stream over received events.
     pub fn wait_many(&self) -> WaitMany<T> {
         let inner = unsafe { &*self.inner() };
 
@@ -214,6 +216,7 @@ impl<T: Event> Handler<T> {
         }
     }
 
+    /// Register an async closure be called when the event is received.
     pub async fn wait_direct_async<
         Fut: Future<Output = bool> + Send + 'static,
         F: FnMut(&mut T::Unique<'_>) -> Fut + Send + 'static,
@@ -227,6 +230,7 @@ impl<T: Event> Handler<T> {
         direct.insert(Box::new(move |u| Box::pin(f(u))))
     }
 
+    /// Register a closure be called when the event is received.
     pub async fn wait_direct(
         &self,
         mut f: impl FnMut(&mut T::Unique<'_>) -> bool + Send + 'static,
@@ -235,6 +239,7 @@ impl<T: Event> Handler<T> {
             .await
     }
 
+    /// Remove a direct listener.
     pub async fn remove_direct(&self, id: usize) {
         let inner = match self.try_inner() {
             Some(inner) => inner,
@@ -245,6 +250,7 @@ impl<T: Event> Handler<T> {
         let _ = direct.remove(id);
     }
 
+    /// A guard that prevents the event handler from returning before it is processed.
     pub fn wait_guard(&self) -> WaitGuard<'_, T> {
         let inner = unsafe { &*self.inner() };
 
@@ -331,6 +337,7 @@ impl<T: Event> Future for &Handler<T> {
 }
 
 pin_project_lite::pin_project! {
+    /// The future returned by [`Handler::wait_once`].
     pub struct WaitOnce<T: Event> {
         // Back-reference to the table.
         inner: Pin<Arc<Inner<T>>>,
@@ -371,6 +378,7 @@ impl<T: Event> Future for WaitOnce<T> {
     }
 }
 
+/// The stream returned by [`Handler::wait_many`].
 pub struct WaitMany<T: Event> {
     recv: BroadcastReceiver<T::Clonable>,
 }
@@ -383,6 +391,7 @@ impl<T: Event> Stream for WaitMany<T> {
     }
 }
 
+/// A guard that prevents the event handler from returning before it is processed.
 pub struct WaitGuard<'a, T: Event> {
     /// Back reference to the inner state.
     inner: &'a Inner<T>,
@@ -426,6 +435,8 @@ impl<T: Event> Drop for WaitGuard<'_, T> {
 }
 
 impl<'a, T: Event> WaitGuard<'a, T> {
+    /// Wait for the next event and returns a guard that prevents the event handler from returning
+    /// before it is processed.
     pub async fn wait(&mut self) -> HeldGuard<'a, '_, T> {
         loop {
             {
@@ -468,6 +479,7 @@ impl<'a, T: Event> WaitGuard<'a, T> {
     }
 }
 
+/// A guard that prevents the event handler from returning before it is processed.
 pub struct HeldGuard<'a, 'b, T: Event> {
     /// Inner state.
     inner: &'a Inner<T>,
@@ -519,6 +531,9 @@ impl<T: Event> Drop for HeldGuard<'_, '_, T> {
     }
 }
 
+/// The type of event that can be sent over a [`Handler`].
+///
+/// This type is sealed and cannot be implemented outside of this crate.
 pub trait Event: EventSealed {}
 
 impl<T: Clone + 'static> Event for T {}

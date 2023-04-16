@@ -33,6 +33,9 @@ use activity::AndroidApp;
 use winit::platform::android::EventLoopBuilderExtAndroid as _;
 use winit::window::WindowBuilder;
 
+/// Additional methods on [`EventLoopBuilder`] specific to Android.
+///
+/// [`EventLoopBuilder`]: crate::event_loop::EventLoopBuilder
 pub trait EventLoopBuilderExtAndroid: sealed::EventLoopBuilderPrivate {
     /// Associates the `AndroidApp` that was passed to `android_main()` with the event loop
     ///

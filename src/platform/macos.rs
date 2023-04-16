@@ -34,6 +34,8 @@ use crate::event_loop::EventLoopBuilder;
 use crate::window::{Window, WindowBuilder};
 
 /// Additional methods on [`Window`] that are specific to MacOS.
+///
+/// [`Window`]: crate::window::Window
 pub trait WindowExtMacOS: sealed::WindowPrivate {
     /// Returns a pointer to the cocoa `NSWindow` that is used by this window.
     ///
@@ -144,6 +146,8 @@ impl WindowExtMacOS for Window {
 /// - `with_titlebar_hidden`
 /// - `with_titlebar_buttons_hidden`
 /// - `with_fullsize_content_view`
+///
+/// [`WindowBuilder`]: crate::window::WindowBuilder
 pub trait WindowBuilderExtMacOS: sealed::WindowBuilderPrivate {
     /// Enables click-and-drag behavior for the entire window, not just the titlebar.
     fn with_movable_by_window_background(self, movable_by_window_background: bool)
@@ -224,6 +228,9 @@ impl WindowBuilderExtMacOS for WindowBuilder {
     }
 }
 
+/// Additional methods on [`EventLoopBuilder`] that are specific to MacOS.
+///
+/// [`EventLoopBuilder`]: crate::event_loop::EventLoopBuilder
 pub trait EventLoopBuilderExtMacOS: sealed::EventLoopBuilderPrivate {
     /// Sets the activation policy for the application.
     ///

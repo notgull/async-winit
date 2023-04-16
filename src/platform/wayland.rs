@@ -36,6 +36,8 @@ use winit::platform::wayland::{
 pub use winit::platform::wayland::MonitorHandleExtWayland;
 
 /// Additional methods on [`EventLoopWindowTarget`] that are specific to Wayland.
+///
+/// [`EventLoopWindowTarget`]: crate::event_loop::EventLoopWindowTarget
 pub trait EventLoopWindowTargetExtWayland: sealed::EventLoopWindowTargetPrivate {
     /// True if the [`EventLoopWindowTarget`] uses Wayland.
     fn is_wayland(&self) -> bool;
@@ -64,6 +66,8 @@ impl EventLoopWindowTargetExtWayland for EventLoopWindowTarget {
 }
 
 /// Additional methods on [`EventLoopBuilder`] that are specific to Wayland.
+///
+/// [`EventLoopBuilder`]: crate::event_loop::EventLoopBuilder
 pub trait EventLoopBuilderExtWayland: sealed::EventLoopBuilderPrivate {
     /// Force using Wayland.
     fn with_wayland(&mut self) -> &mut Self;
@@ -88,6 +92,8 @@ impl EventLoopBuilderExtWayland for EventLoopBuilder {
 }
 
 /// Additional methods on [`Window`] that are specific to Wayland.
+///
+/// [`Window`]: crate::window::Window
 pub trait WindowExtWayland: sealed::WindowPrivate {
     /// Returns a pointer to the `wl_surface` object of wayland that is used by this window.
     ///
@@ -117,6 +123,8 @@ impl WindowExtWayland for Window {
 }
 
 /// Additional methods on [`WindowBuilder`] that are specific to Wayland.
+///
+/// [`WindowBuilder`]: crate::window::WindowBuilder
 pub trait WindowBuilderExtWayland: sealed::WindowBuilderPrivate {
     /// Build window with the given name.
     ///

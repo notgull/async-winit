@@ -34,6 +34,8 @@ use crate::event_loop::EventLoop;
 use crate::window::{Window, WindowBuilder};
 
 /// Additional methods on [`EventLoop`] that are specific to iOS.
+///
+/// [`EventLoop`]: crate::event_loop::EventLoop
 pub trait EventLoopExtIOS: sealed::EventLoopPrivate {
     /// Returns the [`Idiom`] (phone/tablet/tv/etc) for the current device.
     fn idiom(&self) -> Idiom;
@@ -47,6 +49,8 @@ impl EventLoopExtIOS for EventLoop {
 }
 
 /// Additional methods on [`Window`] that are specific to iOS.
+///
+/// [`Window`]: crate::window::Window
 pub trait WindowExtIOS: sealed::WindowPrivate {
     /// Returns a pointer to the [`UIWindow`] that is used by this window.
     ///
@@ -166,6 +170,8 @@ impl WindowExtIOS for Window {
 }
 
 /// Additional methods on [`WindowBuilder`] that are specific to iOS.
+///
+/// [`WindowBuilder`]: struct.WindowBuilder.html
 pub trait WindowBuilderExtIOS: sealed::WindowBuilderPrivate {
     /// Sets the [`contentScaleFactor`] of the underlying [`UIWindow`] to `scale_factor`.
     ///

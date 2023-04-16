@@ -33,6 +33,15 @@ use std::time::{Duration, Instant};
 use futures_lite::stream::Stream;
 
 /// A future or stream that emits timer events.
+///
+/// This timer waits for a specific duration or interval to elapse before returning `Poll::Ready`.
+/// It uses the [`ControlFlow::WaitUntil`] mechanism to wait for the timer to fire.
+///
+/// This type is similar to the [`Timer`] type in the `async-io` crate. The main practical difference
+/// is that, on certain platforms, this `Timer` type may have marginally higher precision.
+///
+/// [`ControlFlow::WaitUntil`]: crate::event_loop::ControlFlow::WaitUntil
+/// [`Timer`]: https://docs.rs/async-io/latest/async_io/timer/struct.Timer.html
 pub struct Timer {
     /// Static reference to the reactor.
     reactor: &'static Reactor,
