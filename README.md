@@ -127,6 +127,15 @@ In my opinion, the flatter `async` style is much easier to read and understand. 
 - There is a not insignificant amount of overhead involved in using `async-winit`. This is because `async-winit` is built on top of `winit`, which is built on top of `winit`'s event loop. This means that `async-winit` has to convert between `async` and `winit`'s event loop, which is not free.
 - `async-winit` is not as low level as `winit`. This means that you can't do everything that you can do with `winit`.
 
+## Credits
+
+`async-winit` was created by John Nunley ([@notgull](https://github.com/notgull)).
+
+This project is heavily based on [`async-io`] by Stjepan Glavina et al, as well as [`winit`] by Pierre Kreiger et al.
+
+[`async-io`]: https://crates.io/crates/async-io
+[`winit`]: https://crates.io/crates/winit
+
 ## License 
 
 `async-winit` is free software: you can redistribute it and/or modify it under the terms of one of the following licenses:
