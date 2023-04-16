@@ -8,14 +8,20 @@ use async_winit::event_loop::EventLoop;
 use async_winit::window::Window;
 
 use color_eyre::eyre::{bail, eyre, Context, Error, Result};
-use http_types::url::Host;
 
+use cosmic_text::Metrics;
+use http::uri::Scheme;
+use http::uri::Uri;
 use smol::channel::bounded;
 use smol::prelude::*;
 use smol::Async;
+use tiny_skia::Paint;
+use tiny_skia::Rect;
+use tiny_skia::Shader;
+use tiny_skia::Transform;
 
 use std::cell::RefCell;
-use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -32,10 +38,7 @@ fn main2(event_loop: EventLoop) {
 
     event_loop.block_on(async move {
         // Overall program state.
-        let state = RefCell::new(State {
-            running: true,
-            requests: vec![],
-        });
+        let state = RefCell::new(State::new());
 
         // Create an executor to handle all of our tasks.
         let executor = Rc::new(smol::LocalExecutor::new());
@@ -117,7 +120,7 @@ fn main2(event_loop: EventLoop) {
                         };
 
                         // Draw with the state.
-                        state.borrow().draw(graphics, &mut buf, size);
+                        state.borrow_mut().draw(graphics, &mut buf, size);
                     }
                 }
             });
@@ -216,20 +219,20 @@ async fn ping_address(state: &RefCell<State>, i: usize) -> Result<()> {
     let url = state.borrow().requests[i].url.clone();
 
     // Parse the URL.
-    let url = http_types::Url::parse(&url)?;
+    let url = url.parse::<Uri>().context("Failed to parse URL")?;
 
     // Find out where we want to connect to.
     let host = url.host().ok_or_else(|| eyre!("Hostname not found"))?;
-    let scheme = match url.scheme() {
-        "http" => HttpScheme::Http,
-        "https" => HttpScheme::Https,
-        scheme => {
-            bail!("Unsupported scheme: {}", scheme);
-        }
+    let scheme = if url.scheme() == Some(&Scheme::HTTP) {
+        HttpScheme::Http
+    } else if url.scheme() == Some(&Scheme::HTTPS) {
+        HttpScheme::Https
+    } else {
+        bail!("Unsupported scheme")
     };
 
     let port = match url.port() {
-        Some(port) => port,
+        Some(port) => port.as_u16(),
         None => match scheme {
             HttpScheme::Http => 80,
             HttpScheme::Https => 443,
@@ -239,14 +242,8 @@ async fn ping_address(state: &RefCell<State>, i: usize) -> Result<()> {
     // Resolve the address.
     let addr_task = smol::unblock({
         let host = host.to_owned();
-        move || match host {
-            Host::Domain(domain) => {
-                let addrs = ToSocketAddrs::to_socket_addrs(&(domain, port));
-                addrs.map(OneOrMany::Many)
-            }
-            Host::Ipv4(ip) => Ok(OneOrMany::from(SocketAddr::new(IpAddr::V4(ip), port))),
-            Host::Ipv6(ip) => Ok(OneOrMany::from(SocketAddr::new(IpAddr::V6(ip), port))),
-        }
+        move || ToSocketAddrs::to_socket_addrs(&(host, port))
+        
     });
 
     // Wait for DNS resolution.
@@ -321,7 +318,7 @@ async fn connect_to_sockets(sockets: impl Stream<Item = SocketAddr>) -> Result<A
 async fn http_over_stream(
     state: &RefCell<State>,
     i: usize,
-    url: http_types::Url,
+    url: Uri,
     mut stream: impl AsyncRead + AsyncWrite + Unpin,
 ) -> Result<()> {
     let update = |status| {
@@ -369,10 +366,19 @@ enum HttpScheme {
 struct State {
     running: bool,
     requests: Vec<HttpRequest>,
+    fonts: cosmic_text::FontSystem
 }
 
 impl State {
-    fn draw(&self, gc: &mut GraphicsContext, buf: &mut Vec<u32>, size: PhysicalSize<u32>) {
+    fn new() -> State {
+        Self {
+            requests: Vec::new(),
+            running: true,
+            fonts: cosmic_text::FontSystem::new()
+        }
+    }
+
+    fn draw(&mut self, gc: &mut GraphicsContext, buf: &mut Vec<u32>, size: PhysicalSize<u32>) {
         // Resize the buffer to the window's size.
         buf.resize((size.width * size.height) as usize, 0);
 
@@ -382,6 +388,64 @@ impl State {
 
         // Fill with a solid color.
         pixmap.fill(Color::from_rgba(0.9, 0.9, 0.9, 1.0).unwrap());
+
+        let line_x = 10;
+        let mut line_y = 10;
+        let mut buffer = cosmic_text::Buffer::new(&mut self.fonts, Metrics::new(12.0, 1.0));
+        let mut cache = cosmic_text::SwashCache::new();
+
+        let mut buffer = buffer.borrow_with(&mut self.fonts);
+
+        // Draw each HTTP request.
+        for request in &self.requests {
+            // Draw the text.
+            buffer.set_size(
+                size.width as f32 - 20.0,
+                size.height as f32 - line_y as f32 - 10.0,
+            );
+
+            let attrs = cosmic_text::Attrs::new();
+            let text = request.status.with_status(|status| format!(
+                "{}\n{}",
+                request.url,
+                status
+            ));
+            buffer.set_text(&text, attrs);
+
+            // Shape the text.
+            buffer.shape_until_scroll();
+
+            // Draw the text.
+            buffer.draw(&mut cache, cosmic_text::Color::rgb(0xA, 0xA, 0xA), |x, y, w, h, color| {
+                // Draw the rectangle to the pixmap.
+                let color = Color::from_rgba8(
+                    color.r(),
+                    color.g(),
+                    color.b(),
+                    color.a()
+                );
+
+                // Draw the rectangle to the pixmap.
+                let paint = Paint {
+                    shader: Shader::SolidColor(color),
+                    ..Default::default()
+                };
+                pixmap.fill_rect(
+                    Rect::from_xywh(
+                        x as f32 + line_x as f32,
+                        y as f32 + line_y as f32,
+                        w as f32,
+                        h as f32,
+                    ).unwrap(),
+                    &paint,
+                    Transform::identity(),
+                    None
+                );
+            });
+
+            // Move to the next line.
+            line_y += buffer.size().1 as u32 + 100;
+        }
 
         // Draw to the surface.
         gc.set_buffer(buf, size.width as u16, size.height as u16);
@@ -404,24 +468,29 @@ enum HttpStatus {
     Error(Error),
 }
 
-enum OneOrMany<T, I> {
-    One(Option<T>),
-    Many(I),
-}
-
-impl<T, I> From<T> for OneOrMany<T, I> {
-    fn from(v: T) -> Self {
-        OneOrMany::One(Some(v))
-    }
-}
-
-impl<I: Iterator> Iterator for OneOrMany<I::Item, I> {
-    type Item = I::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl HttpStatus {
+    fn color(&self) -> Color {
         match self {
-            OneOrMany::One(v) => v.take(),
-            OneOrMany::Many(v) => v.next(),
+            Self::Done(_) => Color::from_rgba(0.0, 0.8, 0.0, 1.0).unwrap(),
+            Self::Error(_) => Color::from_rgba(0.8, 0.0, 0.0, 1.0).unwrap(),
+            _ => Color::from_rgba(0.0, 0.0, 0.8, 1.0).unwrap(),
         }
+    }
+
+    fn with_status<R>(&self, f: impl FnOnce(&str) -> R) -> R {
+        match self {
+            Self::NotStarted => f("Not started"),
+            Self::DnsResolve => f("Resolving hostname"),
+            Self::Connecting => f("Connecting to server"),
+            Self::EstablishingTls => f("Establishing TLS handshake"),
+            Self::Sending => f("Sending request"),
+            Self::Receiving => f("Receiving response"),
+            Self::Done(status) => f(&format!("Finished with status code: {}", status)),
+            Self::Error(err) => f(&format!("Error: {}", err)),
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        matches!(self, Self::Done(_) | Self::Error(_))
     }
 }
