@@ -209,11 +209,6 @@ impl Filter {
 
         block_on!(posting);
 
-        if falling_asleep {
-            // Enter the sleeping state.
-            self.notifier.awake.store(false, Ordering::SeqCst);
-        }
-
         // Check the notification.
         if self.notifier.notified.swap(false, Ordering::SeqCst) {
             // We were notified, so we should poll the future.
@@ -223,9 +218,16 @@ impl Filter {
             }
         }
 
-        // Set the control flow.
-        if self.reactor.exit_requested() {
-            flow.set_exit();
+        if falling_asleep {
+            // Enter the sleeping state.
+            self.notifier.awake.store(false, Ordering::SeqCst);
+        }
+
+        // If we were just notified, don't bother sending a wakeup and just poll.
+        if self.notifier.notified.load(Ordering::Acquire) {
+            flow.set_poll()
+        } else if let Some(code) = self.reactor.exit_requested() {
+            flow.set_exit_with_code(code);
         } else {
             match self.timeout {
                 Some(timeout) => flow.set_wait_timeout(timeout),

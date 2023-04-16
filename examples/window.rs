@@ -102,7 +102,6 @@ fn main2(evl: EventLoop) {
             .await;
 
         // Exit.
-        target.exit();
-        std::future::pending().await
+        target.exit().await
     });
 }

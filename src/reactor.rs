@@ -26,7 +26,7 @@ use crate::window::registration::Registration as WinRegistration;
 use crate::window::WindowBuilder;
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::Waker;
 use std::time::{Duration, Instant};
@@ -44,9 +44,12 @@ use winit::window::{
     UserAttentionType, Window, WindowId, WindowLevel,
 };
 
+const NEEDS_EXIT: i64 = 0x1;
+const EXIT_CODE_SHIFT: u32 = 1;
+
 pub(crate) struct Reactor {
-    /// Begin exiting the event loop.
-    exit_requested: AtomicBool,
+    /// The exit code to exit with, if any.
+    exit_code: AtomicI64,
 
     /// The channel used to send event loop operation requests.
     evl_ops: (Sender<EventLoopOp>, Receiver<EventLoopOp>),
@@ -93,7 +96,7 @@ impl Reactor {
         static REACTOR: OnceLock<Reactor> = OnceLock::new();
 
         REACTOR.get_or_init(|| Reactor {
-            exit_requested: AtomicBool::new(false),
+            exit_code: AtomicI64::new(0),
             proxy: OnceLock::new(),
             evl_ops: async_channel::bounded(1024),
             windows: Mutex::new(HashMap::new()),
@@ -109,14 +112,25 @@ impl Reactor {
         self.proxy.set(proxy).ok();
     }
 
-    /// Get whether or not we need to exit.
-    pub(crate) fn exit_requested(&self) -> bool {
-        self.exit_requested.load(Ordering::SeqCst)
+    /// Get whether or not we need to exit, and the code as well.
+    pub(crate) fn exit_requested(&self) -> Option<i32> {
+        let value = self.exit_code.load(Ordering::SeqCst);
+        if value & NEEDS_EXIT != 0 {
+            Some((value >> EXIT_CODE_SHIFT) as i32)
+        } else {
+            None
+        }
     }
 
     /// Request that the event loop exit.
-    pub(crate) fn request_exit(&self) {
-        self.exit_requested.store(true, Ordering::SeqCst);
+    pub(crate) fn request_exit(&self, code: i32) {
+        let value = NEEDS_EXIT | (code as i64) << EXIT_CODE_SHIFT;
+
+        // Set the exit code.
+        self.exit_code.store(value, Ordering::SeqCst);
+
+        // Wake up the event loop.
+        self.notify();
     }
 
     /// Insert a new timer into the timer wheel.

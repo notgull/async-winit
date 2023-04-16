@@ -231,8 +231,28 @@ impl Default for EventLoop {
 impl EventLoopWindowTarget {
     /// Request that the event loop exit as soon as possible.
     #[inline]
-    pub fn exit(&self) {
-        self.reactor.request_exit();
+    pub fn set_exit(&self) {
+        self.reactor.request_exit(0);
+    }
+
+    /// Request that we exit as soon as possible with the given exit code.
+    #[inline]
+    pub fn set_exit_with_code(&self, code: i32) {
+        self.reactor.request_exit(code);
+    }
+
+    /// Exit the program.
+    #[inline]
+    pub async fn exit(&self) -> ! {
+        self.set_exit();
+        futures_lite::future::pending().await
+    }
+
+    /// Exit the program with the given exit code.
+    #[inline]
+    pub async fn exit_with_code(&self, code: i32) -> ! {
+        self.set_exit_with_code(code);
+        futures_lite::future::pending().await
     }
 
     /// Get the handler for the `Resumed` event.

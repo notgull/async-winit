@@ -35,7 +35,6 @@ fn main2(evl: EventLoop) {
         Timer::after(Duration::from_secs(1)).await;
 
         // Exit.
-        target.exit();
-        std::future::pending().await
+        target.exit().await
     });
 }
