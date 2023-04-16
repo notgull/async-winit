@@ -23,6 +23,7 @@ slab = "0.4.8"
 winit = { version = "0.28.3", default-features = false }
 
 [dev-dependencies]
+futures-lite = { version = "1.13.0", features = ["std"], default-features = false }
 softbuffer = { version = "0.2.0", default-features = false, features = ["x11"] }
 winit = { version = "0.28.3", default-features = false, features = ["x11"] }
 

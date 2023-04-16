@@ -17,7 +17,7 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 */
 
-//! Use [`winit`] like the `async` runtime you've always wanted.
+#![doc = include_str!("../README.md")]
 
 // Private modules.
 mod handler;

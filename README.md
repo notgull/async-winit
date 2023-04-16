@@ -2,7 +2,130 @@
 
 Use `winit` like the `async` runtime you've always wanted.
 
-WIP
+`winit` is actually asynchronous, contrary to popular belief; it's just not `async`. It uses an event loop to handle events, which is an good fit for some cases but not others. The maintainers of `winit` have referred to this type of event loop as "poor man's `async`"; a system that is not `async` but is still asynchronous.
+
+This crate builds an `async` interface on top of this event loop.
+
+## Example
+
+Consider the following `winit` program, which creates a window and prints the size of the window when it is resized:
+
+```rust
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::EventLoop;
+use winit::window::Window;
+
+fn main2(evl: EventLoop<()>) {
+    let mut window = None;
+
+    evl.run(move |event, elwt, flow| {
+        match event {
+            Event::Resumed => {
+                // Application is active; create a window.
+                window = Some(Window::new(elwt).unwrap());
+            },
+
+            Event::Suspended => {
+                // Application is inactive; destroy the window.
+                window = None;
+            },
+
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => {
+                    // Window is closed; exit the application.
+                    flow.set_exit();
+                },
+
+                WindowEvent::Resized(size) => {
+                    println!("{:?}", size);
+                }
+
+                _ => {},
+            },
+
+            _ => {},
+        }
+    });
+}
+
+fn main() {
+#   return;
+    let evl = EventLoop::new();
+    main2(evl);
+}
+```
+
+This strategy is a bit long winded. Now, compare against the equivalent `async-winit` program:
+
+```rust
+use async_winit::event_loop::EventLoop;
+use async_winit::window::Window;
+use futures_lite::prelude::*;
+
+fn main2(evl: EventLoop) {
+    let window_target = evl.window_target().clone();
+
+    evl.block_on(async move {
+        loop {
+            // Wait for the application to be active.
+            evl.resume().await;
+
+            // Create a window.
+            let window = Window::new(&window_target).await.unwrap();
+
+            // Print the size of the window when it is resized.
+            let print_size = async {
+                window.resized().wait_many().for_each(|size| {
+                    println!("{:?}", size);
+                }).await;
+
+                true
+            };
+
+            // Wait until the window is closed.
+            let close = async {
+                window.close_requested().wait_once().await;
+                true
+            };
+
+            // Wait until the application is suspended.
+            let suspend = async {
+                window_target.suspended().wait_once().await;
+                false
+            };
+
+            // Run all of these at once.
+            let needs_exit = print_size.or(clos).or(suspend).await;
+
+            // If we need to exit, exit. Otherwise, loop again, destroying the window.
+            if close {
+                evl.exit().await;
+            } else {
+                drop(window);
+            }
+        }
+    });
+}
+
+fn main() {
+#   return;
+    let evl = EventLoop::new();
+    main2(evl);
+}
+```
+
+In my opinion, the flatter `async` style is much easier to read and understand. Your mileage may vary.
+
+## Pros
+
+- In many cases it may make more sense to think of a program as an `async` task, rather than an event loop.
+- You don't need to tie everything to the `EventLoopWindowTarget`; `Window::new()` and other functions take no parameters and can be called from anywhere as long as an `EventLoop` is running somewhere.
+- You can use the `async` ecosystem to its full potential here.
+
+## Cons
+
+- There is a not insignificant amount of overhead involved in using `async-winit`. This is because `async-winit` is built on top of `winit`, which is built on top of `winit`'s event loop. This means that `async-winit` has to convert between `async` and `winit`'s event loop, which is not free.
+- `async-winit` is not as low level as `winit`. This means that you can't do everything that you can do with `winit`.
 
 ## License 
 

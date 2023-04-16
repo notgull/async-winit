@@ -144,7 +144,7 @@ pub trait WindowBuilderExtX11: sealed::WindowBuilderPrivate {
 
     /// Build window with base size hint. Only implemented on X11.
     ///
-    /// ```
+    /// ```no_run
     /// # use winit::dpi::{LogicalSize, PhysicalSize};
     /// # use winit::window::WindowBuilder;
     /// # use winit::platform::x11::WindowBuilderExtX11;
