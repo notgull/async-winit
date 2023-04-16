@@ -33,3 +33,6 @@ x11 = ["winit/x11"]
 wayland = ["winit/wayland"]
 android-native-activity = ["winit/android-native-activity"]
 android-game-activity = ["winit/android-game-activity"]
+
+[workspace]
+members = ["smol_example"]
