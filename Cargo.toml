@@ -1,6 +1,6 @@
 [package]
 name = "async-winit"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["John Nunley <jtnunley01@gmail.com>"]
 description = "Use winit like an async runtime"

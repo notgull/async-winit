@@ -96,7 +96,7 @@ impl Default for WindowAttributes {
 /// A builder to use to create windows.
 #[derive(Default)]
 pub struct WindowBuilder {
-    attributes: WindowAttributes,
+    window: WindowAttributes,
     pub(crate) platform: crate::platform::PlatformSpecific,
 }
 
@@ -107,9 +107,261 @@ impl WindowBuilder {
     }
 
     pub fn attributes(&self) -> &WindowAttributes {
-        &self.attributes
+        &self.window
     }
 
+    /// Get the current window attributes.
+    pub fn window_attributes(&self) -> &WindowAttributes {
+        &self.window
+    }
+
+    /// Requests the window to be of specific dimensions.
+    ///
+    /// If this is not set, some platform-specific dimensions will be used.
+    ///
+    /// See [`Window::set_inner_size`] for details.
+    #[inline]
+    pub fn with_inner_size<S: Into<Size>>(mut self, size: S) -> Self {
+        self.window.inner_size = Some(size.into());
+        self
+    }
+
+    /// Sets the minimum dimensions a window can have.
+    ///
+    /// If this is not set, the window will have no minimum dimensions (aside
+    /// from reserved).
+    ///
+    /// See [`Window::set_min_inner_size`] for details.
+    #[inline]
+    pub fn with_min_inner_size<S: Into<Size>>(mut self, min_size: S) -> Self {
+        self.window.min_inner_size = Some(min_size.into());
+        self
+    }
+
+    /// Sets the maximum dimensions a window can have.
+    ///
+    /// If this is not set, the window will have no maximum or will be set to
+    /// the primary monitor's dimensions by the platform.
+    ///
+    /// See [`Window::set_max_inner_size`] for details.
+    #[inline]
+    pub fn with_max_inner_size<S: Into<Size>>(mut self, max_size: S) -> Self {
+        self.window.max_inner_size = Some(max_size.into());
+        self
+    }
+
+    /// Sets a desired initial position for the window.
+    ///
+    /// If this is not set, some platform-specific position will be chosen.
+    ///
+    /// See [`Window::set_outer_position`] for details.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **macOS:** The top left corner position of the window content, the
+    ///   window's "inner" position. The window title bar will be placed above
+    ///   it. The window will be positioned such that it fits on screen,
+    ///   maintaining set `inner_size` if any.
+    ///   If you need to precisely position the top left corner of the whole
+    ///   window you have to use [`Window::set_outer_position`] after creating
+    ///   the window.
+    /// - **Windows:** The top left corner position of the window title bar,
+    ///   the window's "outer" position.
+    ///   There may be a small gap between this position and the window due to
+    ///   the specifics of the Window Manager.
+    /// - **X11:** The top left corner of the window, the window's "outer"
+    ///   position.
+    /// - **Others:** Ignored.
+    #[inline]
+    pub fn with_position<P: Into<Position>>(mut self, position: P) -> Self {
+        self.window.position = Some(position.into());
+        self
+    }
+
+    /// Sets whether the window is resizable or not.
+    ///
+    /// The default is `true`.
+    ///
+    /// See [`Window::set_resizable`] for details.
+    #[inline]
+    pub fn with_resizable(mut self, resizable: bool) -> Self {
+        self.window.resizable = resizable;
+        self
+    }
+
+    /// Sets the enabled window buttons.
+    ///
+    /// The default is [`WindowButtons::all`]
+    ///
+    /// See [`Window::set_enabled_buttons`] for details.
+    #[inline]
+    pub fn with_enabled_buttons(mut self, buttons: WindowButtons) -> Self {
+        self.window.enabled_buttons = buttons;
+        self
+    }
+
+    /// Sets the initial title of the window in the title bar.
+    ///
+    /// The default is `"winit window"`.
+    ///
+    /// See [`Window::set_title`] for details.
+    #[inline]
+    pub fn with_title<T: Into<String>>(mut self, title: T) -> Self {
+        self.window.title = title.into();
+        self
+    }
+
+    /// Sets whether the window should be put into fullscreen upon creation.
+    ///
+    /// The default is `None`.
+    ///
+    /// See [`Window::set_fullscreen`] for details.
+    #[inline]
+    pub fn with_fullscreen(mut self, fullscreen: Option<Fullscreen>) -> Self {
+        self.window.fullscreen = fullscreen;
+        self
+    }
+
+    /// Request that the window is maximized upon creation.
+    ///
+    /// The default is `false`.
+    ///
+    /// See [`Window::set_maximized`] for details.
+    #[inline]
+    pub fn with_maximized(mut self, maximized: bool) -> Self {
+        self.window.maximized = maximized;
+        self
+    }
+
+    /// Sets whether the window will be initially visible or hidden.
+    ///
+    /// The default is to show the window.
+    ///
+    /// See [`Window::set_visible`] for details.
+    #[inline]
+    pub fn with_visible(mut self, visible: bool) -> Self {
+        self.window.visible = visible;
+        self
+    }
+
+    /// Sets whether the background of the window should be transparent.
+    ///
+    /// If this is `true`, writing colors with alpha values different than
+    /// `1.0` will produce a transparent window. On some platforms this
+    /// is more of a hint for the system and you'd still have the alpha
+    /// buffer. To control it see [`Window::set_transparent`].
+    ///
+    /// The default is `false`.
+    #[inline]
+    pub fn with_transparent(mut self, transparent: bool) -> Self {
+        self.window.transparent = transparent;
+        self
+    }
+
+    /// Get whether the window will support transparency.
+    #[inline]
+    pub fn transparent(&self) -> bool {
+        self.window.transparent
+    }
+
+    /// Sets whether the window should have a border, a title bar, etc.
+    ///
+    /// The default is `true`.
+    ///
+    /// See [`Window::set_decorations`] for details.
+    #[inline]
+    pub fn with_decorations(mut self, decorations: bool) -> Self {
+        self.window.decorations = decorations;
+        self
+    }
+
+    /// Sets the window level.
+    ///
+    /// This is just a hint to the OS, and the system could ignore it.
+    ///
+    /// The default is [`WindowLevel::Normal`].
+    ///
+    /// See [`WindowLevel`] for details.
+    #[inline]
+    pub fn with_window_level(mut self, level: WindowLevel) -> Self {
+        self.window.window_level = level;
+        self
+    }
+
+    /// Sets the window icon.
+    ///
+    /// The default is `None`.
+    ///
+    /// See [`Window::set_window_icon`] for details.
+    #[inline]
+    pub fn with_window_icon(mut self, window_icon: Option<Icon>) -> Self {
+        self.window.window_icon = window_icon;
+        self
+    }
+
+    /// Sets a specific theme for the window.
+    ///
+    /// If `None` is provided, the window will use the system theme.
+    ///
+    /// The default is `None`.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **macOS:** This is an app-wide setting.
+    /// - **Wayland:** This control only CSD. You can also use `WINIT_WAYLAND_CSD_THEME` env variable to set the theme.
+    ///   Possible values for env variable are: "dark" and light".
+    /// - **x11:** Build window with `_GTK_THEME_VARIANT` hint set to `dark` or `light`.
+    /// - **iOS / Android / Web / x11 / Orbital:** Ignored.
+    #[inline]
+    pub fn with_theme(mut self, theme: Option<Theme>) -> Self {
+        self.window.preferred_theme = theme;
+        self
+    }
+
+    /// Build window with resize increments hint.
+    ///
+    /// The default is `None`.
+    ///
+    /// See [`Window::set_resize_increments`] for details.
+    #[inline]
+    pub fn with_resize_increments<S: Into<Size>>(mut self, resize_increments: S) -> Self {
+        self.window.resize_increments = Some(resize_increments.into());
+        self
+    }
+
+    /// Prevents the window contents from being captured by other apps.
+    ///
+    /// The default is `false`.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **macOS**: if `false`, [`NSWindowSharingNone`] is used but doesn't completely
+    /// prevent all apps from reading the window content, for instance, QuickTime.
+    /// - **iOS / Android / Web / x11 / Orbital:** Ignored.
+    ///
+    /// [`NSWindowSharingNone`]: https://developer.apple.com/documentation/appkit/nswindowsharingtype/nswindowsharingnone
+    #[inline]
+    pub fn with_content_protected(mut self, protected: bool) -> Self {
+        self.window.content_protected = protected;
+        self
+    }
+
+    /// Whether the window will be initially focused or not.
+    ///
+    /// The window should be assumed as not focused by default
+    /// following by the [`WindowEvent::Focused`].
+    ///
+    /// ## Platform-specific:
+    ///
+    /// **Android / iOS / X11 / Wayland / Orbital:** Unsupported.
+    ///
+    /// [`WindowEvent::Focused`]: crate::event::WindowEvent::Focused.
+    #[inline]
+    pub fn with_active(mut self, active: bool) -> WindowBuilder {
+        self.window.active = active;
+        self
+    }
+    
     /// Build a new window.
     pub async fn build(self) -> Result<Window, OsError> {
         let (tx, rx) = oneoff();
@@ -134,46 +386,46 @@ impl WindowBuilder {
     pub(crate) fn into_winit_builder(self) -> winit::window::WindowBuilder {
         let mut builder = winit::window::WindowBuilder::new();
 
-        if let Some(size) = self.attributes.inner_size {
+        if let Some(size) = self.window.inner_size {
             builder = builder.with_inner_size(size);
         }
 
-        if let Some(size) = self.attributes.min_inner_size {
+        if let Some(size) = self.window.min_inner_size {
             builder = builder.with_min_inner_size(size);
         }
 
-        if let Some(size) = self.attributes.max_inner_size {
+        if let Some(size) = self.window.max_inner_size {
             builder = builder.with_max_inner_size(size);
         }
 
-        if let Some(position) = self.attributes.position {
+        if let Some(position) = self.window.position {
             builder = builder.with_position(position);
         }
 
         builder = builder
-            .with_resizable(self.attributes.resizable)
-            .with_enabled_buttons(self.attributes.enabled_buttons)
-            .with_title(&self.attributes.title)
-            .with_fullscreen(self.attributes.fullscreen.clone())
-            .with_maximized(self.attributes.maximized)
-            .with_visible(self.attributes.visible)
-            .with_transparent(self.attributes.transparent)
-            .with_decorations(self.attributes.decorations);
+            .with_resizable(self.window.resizable)
+            .with_enabled_buttons(self.window.enabled_buttons)
+            .with_title(&self.window.title)
+            .with_fullscreen(self.window.fullscreen.clone())
+            .with_maximized(self.window.maximized)
+            .with_visible(self.window.visible)
+            .with_transparent(self.window.transparent)
+            .with_decorations(self.window.decorations);
 
-        if let Some(icon) = self.attributes.window_icon.clone() {
+        if let Some(icon) = self.window.window_icon.clone() {
             builder = builder.with_window_icon(Some(icon));
         }
 
-        builder = builder.with_theme(self.attributes.preferred_theme);
+        builder = builder.with_theme(self.window.preferred_theme);
 
-        if let Some(size) = self.attributes.resize_increments {
+        if let Some(size) = self.window.resize_increments {
             builder = builder.with_resize_increments(size);
         }
 
         builder = builder
-            .with_content_protected(self.attributes.content_protected)
-            .with_window_level(self.attributes.window_level)
-            .with_active(self.attributes.active);
+            .with_content_protected(self.window.content_protected)
+            .with_window_level(self.window.window_level)
+            .with_active(self.window.active);
 
         builder = self.platform.apply_to(builder);
 

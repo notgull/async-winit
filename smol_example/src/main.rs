@@ -242,8 +242,7 @@ async fn ping_address(state: &RefCell<State>, i: usize) -> Result<()> {
     // Resolve the address.
     let addr_task = smol::unblock({
         let host = host.to_owned();
-        move || ToSocketAddrs::to_socket_addrs(&(host, port))
-        
+        move || ToSocketAddrs::to_socket_addrs(&(host, port)) 
     });
 
     // Wait for DNS resolution.
@@ -400,13 +399,13 @@ impl State {
         for request in &self.requests {
             // Draw the text.
             buffer.set_size(
-                size.width as f32 - 20.0,
-                size.height as f32 - line_y as f32 - 10.0,
+                size.width as f32,// - 20.0,
+                size.height as f32// - line_y as f32 - 10.0,
             );
 
             let attrs = cosmic_text::Attrs::new();
             let text = request.status.with_status(|status| format!(
-                "{}\n{}",
+                "{}\r\n{}",
                 request.url,
                 status
             ));
@@ -445,6 +444,7 @@ impl State {
 
             // Move to the next line.
             line_y += buffer.size().1 as u32 + 100;
+            buffer.lines.clear();
         }
 
         // Draw to the surface.
