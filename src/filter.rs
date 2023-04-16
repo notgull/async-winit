@@ -108,11 +108,9 @@ impl Filter {
             unparker,
         }));
 
-        // We have to allocate the future on the heap to make it movable.
-        let mut future = Box::pin(future);
-
+        // Poll the future once to set up event handlers.
         let mut cx = Context::from_waker(&notifier_waker);
-        if let Poll::Ready(i) = future.as_mut().poll(&mut cx) {
+        if let Poll::Ready(i) = future.poll(&mut cx) {
             return ReturnOrFinish::FutureReturned(i);
         }
 
