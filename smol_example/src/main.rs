@@ -242,7 +242,7 @@ async fn ping_address(state: &RefCell<State>, i: usize) -> Result<()> {
     // Resolve the address.
     let addr_task = smol::unblock({
         let host = host.to_owned();
-        move || ToSocketAddrs::to_socket_addrs(&(host, port)) 
+        move || ToSocketAddrs::to_socket_addrs(&(host, port))
     });
 
     // Wait for DNS resolution.
@@ -365,7 +365,7 @@ enum HttpScheme {
 struct State {
     running: bool,
     requests: Vec<HttpRequest>,
-    fonts: cosmic_text::FontSystem
+    fonts: cosmic_text::FontSystem,
 }
 
 impl State {
@@ -373,7 +373,7 @@ impl State {
         Self {
             requests: Vec::new(),
             running: true,
-            fonts: cosmic_text::FontSystem::new()
+            fonts: cosmic_text::FontSystem::new(),
         }
     }
 
@@ -399,48 +399,46 @@ impl State {
         for request in &self.requests {
             // Draw the text.
             buffer.set_size(
-                size.width as f32,// - 20.0,
-                size.height as f32// - line_y as f32 - 10.0,
+                size.width as f32,  // - 20.0,
+                size.height as f32, // - line_y as f32 - 10.0,
             );
 
             let attrs = cosmic_text::Attrs::new();
-            let text = request.status.with_status(|status| format!(
-                "{}\r\n{}",
-                request.url,
-                status
-            ));
+            let text = request
+                .status
+                .with_status(|status| format!("{}\r\n{}", request.url, status));
             buffer.set_text(&text, attrs);
 
             // Shape the text.
             buffer.shape_until_scroll();
 
             // Draw the text.
-            buffer.draw(&mut cache, cosmic_text::Color::rgb(0xA, 0xA, 0xA), |x, y, w, h, color| {
-                // Draw the rectangle to the pixmap.
-                let color = Color::from_rgba8(
-                    color.r(),
-                    color.g(),
-                    color.b(),
-                    color.a()
-                );
+            buffer.draw(
+                &mut cache,
+                cosmic_text::Color::rgb(0xA, 0xA, 0xA),
+                |x, y, w, h, color| {
+                    // Draw the rectangle to the pixmap.
+                    let color = Color::from_rgba8(color.r(), color.g(), color.b(), color.a());
 
-                // Draw the rectangle to the pixmap.
-                let paint = Paint {
-                    shader: Shader::SolidColor(color),
-                    ..Default::default()
-                };
-                pixmap.fill_rect(
-                    Rect::from_xywh(
-                        x as f32 + line_x as f32,
-                        y as f32 + line_y as f32,
-                        w as f32,
-                        h as f32,
-                    ).unwrap(),
-                    &paint,
-                    Transform::identity(),
-                    None
-                );
-            });
+                    // Draw the rectangle to the pixmap.
+                    let paint = Paint {
+                        shader: Shader::SolidColor(color),
+                        ..Default::default()
+                    };
+                    pixmap.fill_rect(
+                        Rect::from_xywh(
+                            x as f32 + line_x as f32,
+                            y as f32 + line_y as f32,
+                            w as f32,
+                            h as f32,
+                        )
+                        .unwrap(),
+                        &paint,
+                        Transform::identity(),
+                        None,
+                    );
+                },
+            );
 
             // Move to the next line.
             line_y += buffer.size().1 as u32 + 100;

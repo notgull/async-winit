@@ -91,7 +91,7 @@ impl Reactor {
     /// once, remove this!
     ///
     /// Relevant winit code:
-    /// https://github.com/rust-windowing/winit/blob/2486f0f1a1d00ac9e5936a5222b2cfe90ceeca02/src/event_loop.rs#L114-L117
+    /// [https://github.com/rust-windowing/winit/blob/2486f0f1a1d00ac9e5936a5222b2cfe90ceeca02/src/event_loop.rs#L114-L117]
     pub(crate) fn get() -> &'static Self {
         static REACTOR: OnceLock<Reactor> = OnceLock::new();
 

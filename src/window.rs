@@ -193,7 +193,7 @@ impl WindowBuilder {
     ///
     /// The default is [`WindowButtons::all`]
     ///
-    /// See [`Window::set_enabled_buttons`] for details.
+    /// See `Window::set_enabled_buttons` for details.
     #[inline]
     pub fn with_enabled_buttons(mut self, buttons: WindowButtons) -> Self {
         self.window.enabled_buttons = buttons;
@@ -361,7 +361,7 @@ impl WindowBuilder {
         self.window.active = active;
         self
     }
-    
+
     /// Build a new window.
     pub async fn build(self) -> Result<Window, OsError> {
         let (tx, rx) = oneoff();

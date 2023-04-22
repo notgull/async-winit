@@ -19,51 +19,40 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 
 //! Platform specific code.
 
-#[cfg(target_os = "android")]
+#[cfg(android_platform)]
 pub mod android;
 
-#[cfg(target_os = "ios")]
+#[cfg(ios_platform)]
 pub mod ios;
 
-#[cfg(target_os = "macos")]
+#[cfg(macos_platform)]
 pub mod macos;
 
-#[cfg(target_os = "redox")]
+#[cfg(orbital_platform)]
 pub mod orbital;
 
-#[cfg(all(
-    unix,
-    not(any(target_os = "android", target_os = "macos", target_os = "ios",)),
-    feature = "x11"
-))]
+#[cfg(x11_platform)]
 pub mod x11;
 
-#[cfg(all(
-    unix,
-    not(any(target_os = "android", target_os = "macos", target_os = "ios",)),
-    feature = "wayland"
-))]
+#[cfg(wayland_platform)]
 pub mod wayland;
 
 #[cfg(windows)]
 pub mod windows;
 
-#[cfg(all(any(unix, windows, target_os = "redox"), not(target_os = "ios")))]
+#[cfg(any(windows, x11_platform, wayland_platform))]
 pub mod run_return;
 
 cfg_if::cfg_if! {
-    if #[cfg(target_os = "android")] {
+    if #[cfg(android_platform)] {
         pub(crate) use android::PlatformSpecific;
-    } else if #[cfg(target_os = "ios")] {
+    } else if #[cfg(ios_platform)] {
         pub(crate) use ios::PlatformSpecific;
-    } else if #[cfg(target_os = "macos")] {
+    } else if #[cfg(macos_platform)] {
         pub(crate) use macos::PlatformSpecific;
-    } else if #[cfg(target_os = "redox")] {
+    } else if #[cfg(orbital_platform)] {
         pub(crate) use orbital::PlatformSpecific;
-    } else if #[cfg(all(
-        unix,
-        not(any(target_os = "android", target_os = "macos", target_os = "ios",)),
-    ))] {
+    } else if #[cfg(any(x11_platform, wayland_platform))] {
         #[cfg(all(feature = "x11", not(feature = "wayland")))]
         pub(crate) use x11::PlatformSpecific;
 
