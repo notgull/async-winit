@@ -5,6 +5,7 @@ Payment Platforms:
 
 Participating Contributors:
 - [John Nunley (notgull)](https://github.com/notgull)
+- [Robert Walter (RobWalt)](https://github.com/robwalt)
 
 ## Purpose
 
