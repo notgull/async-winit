@@ -76,7 +76,7 @@ pub trait WindowExtIOS: sealed::WindowPrivate {
     /// Sets the [`contentScaleFactor`] of the underlying [`UIWindow`] to `scale_factor`.
     ///
     /// The default value is device dependent, and it's recommended GLES or Metal applications set
-    /// this to [`MonitorHandle::scale_factor()`].
+    /// this to `MonitorHandle::scale_factor()`.
     ///
     /// [`UIWindow`]: https://developer.apple.com/documentation/uikit/uiwindow?language=objc
     /// [`contentScaleFactor`]: https://developer.apple.com/documentation/uikit/uiview/1622657-contentscalefactor?language=objc
@@ -176,7 +176,7 @@ pub trait WindowBuilderExtIOS: sealed::WindowBuilderPrivate {
     /// Sets the [`contentScaleFactor`] of the underlying [`UIWindow`] to `scale_factor`.
     ///
     /// The default value is device dependent, and it's recommended GLES or Metal applications set
-    /// this to [`MonitorHandle::scale_factor()`].
+    /// this to `MonitorHandle::scale_factor()`.
     ///
     /// [`UIWindow`]: https://developer.apple.com/documentation/uikit/uiwindow?language=objc
     /// [`contentScaleFactor`]: https://developer.apple.com/documentation/uikit/uiview/1622657-contentscalefactor?language=objc

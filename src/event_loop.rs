@@ -37,6 +37,7 @@ License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>.
 //! EventLoop::new().block_on(async move {
 //!     // Wait for a message from the channel.
 //!     let message = receiver.recv().await.unwrap();
+//! #   futures_lite::future::pending::<()>().await
 //! });
 //!
 //! // In another thread, send a message to the event loop.
