@@ -190,7 +190,7 @@ impl WindowExtWindows for Window {
 /// Additional methods on `WindowBuilder` that are specific to Windows.
 pub trait WindowBuilderExtWindows: sealed::WindowBuilderPrivate {
     /// Set an owner to the window to be created. Can be used to create a dialog box, for example.
-    /// This only works when [`WindowBuilder::with_parent_window`] isn't called or set to `None`.
+    /// This only works when `WindowBuilder::with_parent_window` isn't called or set to `None`.
     /// Can be used in combination with [`WindowExtWindows::set_enable(false)`](WindowExtWindows::set_enable)
     /// on the owner window to create a modal dialog box.
     ///
@@ -206,12 +206,10 @@ pub trait WindowBuilderExtWindows: sealed::WindowBuilderPrivate {
     ///
     /// Parent and menu are mutually exclusive; a child window cannot have a menu!
     ///
-    /// The menu must have been manually created beforehand with [`CreateMenu`] or similar.
+    /// The menu must have been manually created beforehand with `CreateMenu` or similar.
     ///
     /// Note: Dark mode cannot be supported for win32 menus, it's simply not possible to change how the menus look.
     /// If you use this, it is recommended that you combine it with `with_theme(Some(Theme::Light))` to avoid a jarring effect.
-    ///
-    /// [`CreateMenu`]: windows_sys::Win32::UI::WindowsAndMessaging::CreateMenu
     fn with_menu(self, menu: HMENU) -> WindowBuilder;
 
     /// This sets `ICON_BIG`. A good ceiling here is 256x256.

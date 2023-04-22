@@ -36,3 +36,6 @@ android-game-activity = ["winit/android-game-activity"]
 
 [workspace]
 members = ["smol_example"]
+
+[build-dependencies]
+cfg_aliases = "0.1.1"
