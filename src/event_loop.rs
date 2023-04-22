@@ -116,10 +116,7 @@ pub struct EventLoopWindowTarget {
     proxy: EventLoopProxy<Wakeup>,
 
     /// Is this using wayland?
-    #[cfg(all(
-        unix,
-        not(any(target_os = "android", target_os = "macos", target_os = "ios")),
-    ))]
+    #[cfg(any(x11_platform, wayland_platform))]
     pub(crate) is_wayland: bool,
 }
 
@@ -149,10 +146,7 @@ impl Clone for EventLoopWindowTarget {
         Self {
             reactor: self.reactor,
             proxy: self.proxy.clone(),
-            #[cfg(all(
-                unix,
-                not(any(target_os = "android", target_os = "macos", target_os = "ios")),
-            ))]
+            #[cfg(any(x11_platform, wayland_platform))]
             is_wayland: self.is_wayland,
         }
     }
@@ -182,10 +176,7 @@ impl EventLoopBuilder {
             window_target: EventLoopWindowTarget {
                 reactor: Reactor::get(),
                 proxy: inner.create_proxy(),
-                #[cfg(all(
-                    unix,
-                    not(any(target_os = "android", target_os = "macos", target_os = "ios",)),
-                ))]
+                #[cfg(any(x11_platform, wayland_platform))]
                 is_wayland: {
                     cfg_if::cfg_if! {
                         if #[cfg(feature = "x11")] {
