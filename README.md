@@ -49,6 +49,7 @@ fn main2(evl: EventLoop<()>) {
 }
 
 fn main() {
+#   return;
     let evl = EventLoop::new();
     main2(evl);
 }
@@ -112,6 +113,7 @@ fn main2(evl: EventLoop) {
 }
 
 fn main() {
+#   return;
     let evl = EventLoop::new();
     main2(evl);
 }
