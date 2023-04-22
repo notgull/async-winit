@@ -49,7 +49,6 @@ fn main2(evl: EventLoop<()>) {
 }
 
 fn main() {
-#   return;
     let evl = EventLoop::new();
     main2(evl);
 }
@@ -68,16 +67,20 @@ fn main2(evl: EventLoop) {
     evl.block_on(async move {
         loop {
             // Wait for the application to be active.
-            evl.resume().await;
+            window_target.resumed().await;
 
             // Create a window.
-            let window = Window::new(&window_target).await.unwrap();
+            let window = Window::new().await.unwrap();
 
             // Print the size of the window when it is resized.
             let print_size = async {
-                window.resized().wait_many().for_each(|size| {
-                    println!("{:?}", size);
-                }).await;
+                window
+                    .resized()
+                    .wait_many()
+                    .for_each(|size| {
+                        println!("{:?}", size);
+                    })
+                    .await;
 
                 true
             };
@@ -85,6 +88,7 @@ fn main2(evl: EventLoop) {
             // Wait until the window is closed.
             let close = async {
                 window.close_requested().wait_once().await;
+                println!("Close");
                 true
             };
 
@@ -95,11 +99,11 @@ fn main2(evl: EventLoop) {
             };
 
             // Run all of these at once.
-            let needs_exit = print_size.or(clos).or(suspend).await;
+            let needs_exit = print_size.or(close).or(suspend).await;
 
             // If we need to exit, exit. Otherwise, loop again, destroying the window.
-            if close {
-                evl.exit().await;
+            if needs_exit {
+                window_target.exit().await;
             } else {
                 drop(window);
             }
@@ -108,7 +112,6 @@ fn main2(evl: EventLoop) {
 }
 
 fn main() {
-#   return;
     let evl = EventLoop::new();
     main2(evl);
 }
