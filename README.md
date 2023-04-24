@@ -131,6 +131,7 @@ In my opinion, the flatter `async` style is much easier to read and understand. 
 
 - There is a not insignificant amount of overhead involved in using `async-winit`. This is because `async-winit` is built on top of `winit`, which is built on top of `winit`'s event loop. This means that `async-winit` has to convert between `async` and `winit`'s event loop, which is not free.
 - `async-winit` is not as low level as `winit`. This means that you can't do everything that you can do with `winit`.
+  - For instance, data cannot be shared mutable between individual tasks. This can be easily worked around with `RefCell` in simple cases, but still requires additional thought for shared state.
 
 ## Credits
 
