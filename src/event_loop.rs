@@ -299,6 +299,12 @@ impl EventLoop {
         &self.window_target
     }
 
+    /// Get a reference to the original event loop.
+    #[inline]
+    pub fn inner(&self) -> &winit::event_loop::EventLoop<Wakeup> {
+        &self.inner
+    }
+
     /// Block on a future forever.
     #[inline]
     pub fn block_on(self, future: impl Future<Output = Infallible> + 'static) -> ! {
