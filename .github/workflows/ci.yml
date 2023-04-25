@@ -33,7 +33,7 @@ jobs:
           - { target: i686-unknown-linux-gnu,   os: ubuntu-latest,   }
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest,   }
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: x11 }
-          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: wayland }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: "wayland,wayland-dlopen" }
           - { target: aarch64-linux-android,    os: ubuntu-latest, cmd: 'apk --', features: "android-native-activity" }
           - { target: x86_64-unknown-redox,     os: ubuntu-latest,   }
           - { target: x86_64-apple-darwin,      os: macos-latest,    }
@@ -84,9 +84,12 @@ jobs:
       shell: bash
       if: >
         !contains(matrix.platform.target, 'redox') &&
+        !contains(matrix.platform.target, 'ios') &&
+        !contains(matrix.platform.target, 'android') &&
         matrix.rust_version != '1.64.0'
       run: cargo $CMD test --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
 
+    # TODO: Run tests on android/ios once rust-windowing/softbuffer#44 is resolved
     - name: Run tests
       shell: bash
       if: >
@@ -94,6 +97,7 @@ jobs:
         !contains(matrix.platform.target, 'ios') &&
         !contains(matrix.platform.target, 'wasm32') &&
         !contains(matrix.platform.target, 'redox') &&
+        !contains(matrix.platform.target, 'android') &&
         matrix.rust_version != '1.64.0'
       run: cargo $CMD test --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
 

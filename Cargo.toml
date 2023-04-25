@@ -31,6 +31,7 @@ winit = { version = "0.28.3", default-features = false, features = ["x11"] }
 default = ["x11", "wayland"]
 x11 = ["winit/x11"]
 wayland = ["winit/wayland"]
+wayland-dlopen = ["winit/wayland-dlopen"]
 android-native-activity = ["winit/android-native-activity"]
 android-game-activity = ["winit/android-game-activity"]
 
