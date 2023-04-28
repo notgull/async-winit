@@ -57,6 +57,7 @@ use std::fmt;
 use std::future::Future;
 use std::ops;
 
+use raw_window_handle::{HasRawDisplayHandle, RawDisplayHandle};
 use winit::event_loop::EventLoopProxy;
 
 #[doc(inline)]
@@ -116,6 +117,9 @@ pub struct EventLoopWindowTarget {
     /// The event loop proxy.
     proxy: EventLoopProxy<Wakeup>,
 
+    /// The raw display handle.
+    raw_display_handle: RawDisplayHandle,
+
     /// Is this using wayland?
     #[cfg(any(x11_platform, wayland_platform))]
     pub(crate) is_wayland: bool,
@@ -147,6 +151,7 @@ impl Clone for EventLoopWindowTarget {
         Self {
             reactor: self.reactor,
             proxy: self.proxy.clone(),
+            raw_display_handle: self.raw_display_handle,
             #[cfg(any(x11_platform, wayland_platform))]
             is_wayland: self.is_wayland,
         }
@@ -177,6 +182,7 @@ impl EventLoopBuilder {
             window_target: EventLoopWindowTarget {
                 reactor: Reactor::get(),
                 proxy: inner.create_proxy(),
+                raw_display_handle: inner.raw_display_handle(),
                 #[cfg(any(x11_platform, wayland_platform))]
                 is_wayland: {
                     cfg_if::cfg_if! {
@@ -200,6 +206,12 @@ impl EventLoopBuilder {
 impl Default for EventLoopBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+unsafe impl HasRawDisplayHandle for EventLoop {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        self.window_target.raw_display_handle
     }
 }
 
@@ -289,6 +301,12 @@ impl EventLoopWindowTarget {
 
         // Wait for the filter to be set.
         rx.recv().await;
+    }
+}
+
+unsafe impl HasRawDisplayHandle for EventLoopWindowTarget {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        self.raw_display_handle
     }
 }
 
