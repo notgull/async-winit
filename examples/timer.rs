@@ -21,17 +21,17 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 use std::time::Duration;
 
 use async_winit::event_loop::{EventLoop, EventLoopBuilder};
-use async_winit::Timer;
+use async_winit::{ThreadUnsafe, Timer};
 
 fn main() {
     main2(EventLoopBuilder::new().build())
 }
 
-fn main2(evl: EventLoop) {
+fn main2(evl: EventLoop<ThreadUnsafe>) {
     let target = evl.window_target().clone();
     evl.block_on(async move {
         // Wait one second.
-        Timer::after(Duration::from_secs(1)).await;
+        Timer::<ThreadUnsafe>::after(Duration::from_secs(1)).await;
 
         // Exit.
         target.exit().await

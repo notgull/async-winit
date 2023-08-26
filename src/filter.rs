@@ -35,6 +35,7 @@ use parking::Parker;
 
 use crate::event_loop::Wakeup;
 use crate::reactor::Reactor;
+use crate::sync::ThreadSafety;
 
 use winit::event::Event;
 use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
@@ -53,7 +54,7 @@ pub enum ReturnOrFinish<O, T> {
 ///
 /// This type takes events and passes them to the event handlers. It also handles the `async` contexts
 /// that are waiting for events.
-pub struct Filter {
+pub struct Filter<TS: ThreadSafety> {
     /// The timeout to wait for.
     timeout: Option<Duration>,
 
@@ -73,21 +74,21 @@ pub struct Filter {
     holding_waker: Waker,
 
     /// The reactor.
-    reactor: &'static Reactor,
+    reactor: TS::Rc<Reactor<TS>>,
 }
 
-impl Filter {
+impl<TS: ThreadSafety> Filter<TS> {
     /// Create a new filter from an event loop.
     ///
     /// The future is polled once before returning to set up event handlers.
     pub fn new<F>(
         inner: &EventLoop<Wakeup>,
         future: Pin<&mut F>,
-    ) -> ReturnOrFinish<Filter, F::Output>
+    ) -> ReturnOrFinish<Filter<TS>, F::Output>
     where
         F: Future,
     {
-        let reactor = Reactor::get();
+        let reactor = Reactor::<TS>::get();
 
         // Create a waker to wake us up.
         let notifier = Arc::new(ReactorWaker {

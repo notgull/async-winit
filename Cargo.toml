@@ -20,6 +20,7 @@ parking = "2.1.0"
 pin-project-lite = "0.2.9"
 raw-window-handle = "0.5.2"
 slab = "0.4.8"
+unsend = { version = "0.2.1", default-features = false, features = ["alloc"] }
 winit = { version = "0.28.3", default-features = false }
 
 [build-dependencies]

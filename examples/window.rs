@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use async_winit::event_loop::{EventLoop, EventLoopBuilder};
 use async_winit::window::Window;
-use async_winit::Timer;
+use async_winit::{ThreadUnsafe, Timer};
 
 use futures_lite::prelude::*;
 use softbuffer::GraphicsContext;
@@ -31,14 +31,14 @@ fn main() {
     main2(EventLoopBuilder::new().build())
 }
 
-fn main2(evl: EventLoop) {
+fn main2(evl: EventLoop<ThreadUnsafe>) {
     let target = evl.window_target().clone();
     evl.block_on(async move {
         // Wait for a resume event to start.
         target.resumed().await;
 
         // Create a window.
-        let window = Window::new().await.unwrap();
+        let window = Window::<ThreadUnsafe>::new().await.unwrap();
 
         // Print resize events.
         let print_resize = {
@@ -49,7 +49,7 @@ fn main2(evl: EventLoop) {
 
         // Print the position every second.
         let print_position = {
-            Timer::interval(Duration::from_secs(1))
+            Timer::<ThreadUnsafe>::interval(Duration::from_secs(1))
                 .then(|_| window.inner_position())
                 .for_each(|posn| {
                     println!("Window position: {:?}", posn);

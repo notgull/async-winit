@@ -6,6 +6,7 @@
 use async_winit::dpi::PhysicalSize;
 use async_winit::event_loop::EventLoop;
 use async_winit::window::Window;
+use async_winit::ThreadUnsafe;
 
 use color_eyre::eyre::{bail, eyre, Context, Error, Result};
 
@@ -27,7 +28,7 @@ fn main() {
     main2(EventLoop::new())
 }
 
-fn main2(event_loop: EventLoop) {
+fn main2(event_loop: EventLoop<ThreadUnsafe>) {
     let target = event_loop.window_target().clone();
 
     event_loop.block_on(async move {
@@ -79,7 +80,7 @@ fn main2(event_loop: EventLoop) {
             executor.run(target.resumed()).await;
 
             // Create a window.
-            let window = Window::new().await.unwrap();
+            let window = Window::<ThreadUnsafe>::new().await.unwrap();
             state.borrow_mut().use_window(&window);
 
             // Wait for the application to be suspended.
@@ -386,7 +387,7 @@ enum HttpScheme {
 struct State {
     running: bool,
     requests: Vec<HttpRequest>,
-    current_window: Option<Window>,
+    current_window: Option<Window<ThreadUnsafe>>,
 }
 
 impl State {
@@ -398,7 +399,7 @@ impl State {
         }
     }
 
-    fn use_window(&mut self, window: &Window) {
+    fn use_window(&mut self, window: &Window<ThreadUnsafe>) {
         assert!(self.current_window.is_none());
         self.current_window = Some(window.clone());
     }

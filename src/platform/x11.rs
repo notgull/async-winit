@@ -23,6 +23,7 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 
 use super::__private as sealed;
 use crate::event_loop::{EventLoopBuilder, EventLoopWindowTarget};
+use crate::sync::ThreadSafety;
 use crate::window::{Window, WindowBuilder};
 
 use std::os::raw;
@@ -41,7 +42,7 @@ pub trait EventLoopWindowTargetExtX11: sealed::EventLoopWindowTargetPrivate {
     fn is_x11(&self) -> bool;
 }
 
-impl EventLoopWindowTargetExtX11 for EventLoopWindowTarget {
+impl<TS: ThreadSafety> EventLoopWindowTargetExtX11 for EventLoopWindowTarget<TS> {
     #[inline]
     fn is_x11(&self) -> bool {
         !self.is_wayland
@@ -102,7 +103,7 @@ pub trait WindowExtX11: sealed::WindowPrivate {
     fn xcb_connection(&self) -> Option<*mut raw::c_void>;
 }
 
-impl WindowExtX11 for Window {
+impl<TS: ThreadSafety> WindowExtX11 for Window<TS> {
     fn xcb_connection(&self) -> Option<*mut raw::c_void> {
         self.window().xcb_connection()
     }
