@@ -467,14 +467,6 @@ enum HttpStatus {
 }
 
 impl HttpStatus {
-    fn color(&self) -> Color {
-        match self {
-            Self::Done(_) => Color::from_rgba(0.0, 0.8, 0.0, 1.0).unwrap(),
-            Self::Error(_) => Color::from_rgba(0.8, 0.0, 0.0, 1.0).unwrap(),
-            _ => Color::from_rgba(0.0, 0.0, 0.8, 1.0).unwrap(),
-        }
-    }
-
     fn with_status<R>(&self, f: impl FnOnce(&str) -> R) -> R {
         match self {
             Self::NotStarted => f("Not started"),
@@ -486,9 +478,5 @@ impl HttpStatus {
             Self::Done(status) => f(&format!("Finished with status code: {}", status)),
             Self::Error(err) => f(&format!("Error: {}", err)),
         }
-    }
-
-    fn is_complete(&self) -> bool {
-        matches!(self, Self::Done(_) | Self::Error(_))
     }
 }
