@@ -9,24 +9,18 @@ use async_winit::window::Window;
 
 use color_eyre::eyre::{bail, eyre, Context, Error, Result};
 
-use cosmic_text::Metrics;
 use http::uri::Scheme;
 use http::uri::Uri;
 use smol::channel::bounded;
 use smol::prelude::*;
 use smol::Async;
-use tiny_skia::Paint;
-use tiny_skia::Rect;
-use tiny_skia::Shader;
-use tiny_skia::Transform;
 
 use std::cell::RefCell;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use softbuffer::GraphicsContext;
-use tiny_skia::{Color, PixmapMut};
+use theo::{Display, RenderContext, Surface};
 
 fn main() {
     // TODO: Convert to a library and use main2() as the entry point on Android.
@@ -39,6 +33,10 @@ fn main2(event_loop: EventLoop) {
     event_loop.block_on(async move {
         // Overall program state.
         let state = RefCell::new(State::new());
+
+        // Context for graphics.
+        let gdisplay =
+            RefCell::new(unsafe { Display::new(&target).expect("Failed to create display") });
 
         // Create an executor to handle all of our tasks.
         let executor = Rc::new(smol::LocalExecutor::new());
@@ -82,6 +80,7 @@ fn main2(event_loop: EventLoop) {
 
             // Create a window.
             let window = Window::new().await.unwrap();
+            state.borrow_mut().use_window(&window);
 
             // Wait for the application to be suspended.
             let mut suspend_guard = target.suspended().wait_guard();
@@ -99,7 +98,7 @@ fn main2(event_loop: EventLoop) {
             let draw = executor.spawn({
                 let window = window.clone();
                 let state = &state;
-                let mut buf = vec![];
+                let gdisplay = &gdisplay;
 
                 async move {
                     let mut graphics_context = None;
@@ -115,12 +114,24 @@ fn main2(event_loop: EventLoop) {
                         // Get the graphics context.
                         let graphics = match &mut graphics_context {
                             Some(graphics) => graphics,
-                            graphics @ None => graphics
-                                .insert(unsafe { GraphicsContext::new(&window, &window) }.unwrap()),
+                            graphics @ None => graphics.insert(
+                                unsafe {
+                                    gdisplay.borrow_mut().make_surface(
+                                        &window,
+                                        size.width,
+                                        size.height,
+                                    )
+                                }
+                                .await
+                                .unwrap(),
+                            ),
                         };
 
                         // Draw with the state.
-                        state.borrow_mut().draw(graphics, &mut buf, size);
+                        state.borrow_mut().draw(gdisplay, graphics, size);
+
+                        // Flush the graphics context.
+                        gdisplay.borrow_mut().present().await;
                     }
                 }
             });
@@ -136,7 +147,7 @@ fn main2(event_loop: EventLoop) {
                         .received_character()
                         .wait_many()
                         .for_each(|ch| {
-                            if ch == 'R' && !state.borrow().running {
+                            if (ch == 'R' || ch == 'r') && !state.borrow().running {
                                 run_again.try_send(()).ok();
                             }
                         })
@@ -158,6 +169,7 @@ fn main2(event_loop: EventLoop) {
                 wait_for_close.cancel().await;
                 draw.cancel().await;
                 drop((window, guard));
+                state.borrow_mut().drop_window();
             } else {
                 target.exit().await;
             }
@@ -188,6 +200,9 @@ async fn make_url_queries<'a>(
             url: url.into(),
             status: HttpStatus::NotStarted,
         });
+        if let Some(window) = &state.borrow().current_window {
+            window.request_redraw();
+        }
     }
 
     // Spawn the HTTP requests.
@@ -213,6 +228,9 @@ async fn make_url_queries<'a>(
 async fn ping_address(state: &RefCell<State>, i: usize) -> Result<()> {
     let update = |status| {
         state.borrow_mut().requests[i].status = status;
+        if let Some(window) = &state.borrow().current_window {
+            window.request_redraw();
+        }
     };
 
     // First, figure out where we need to connect to.
@@ -322,6 +340,9 @@ async fn http_over_stream(
 ) -> Result<()> {
     let update = |status| {
         state.borrow_mut().requests[i].status = status;
+        if let Some(window) = &state.borrow().current_window {
+            window.request_redraw();
+        }
     };
 
     update(HttpStatus::Sending);
@@ -365,7 +386,7 @@ enum HttpScheme {
 struct State {
     running: bool,
     requests: Vec<HttpRequest>,
-    fonts: cosmic_text::FontSystem,
+    current_window: Option<Window>,
 }
 
 impl State {
@@ -373,80 +394,58 @@ impl State {
         Self {
             requests: Vec::new(),
             running: true,
-            fonts: cosmic_text::FontSystem::new(),
+            current_window: None,
         }
     }
 
-    fn draw(&mut self, gc: &mut GraphicsContext, buf: &mut Vec<u32>, size: PhysicalSize<u32>) {
-        // Resize the buffer to the window's size.
-        buf.resize((size.width * size.height) as usize, 0);
+    fn use_window(&mut self, window: &Window) {
+        assert!(self.current_window.is_none());
+        self.current_window = Some(window.clone());
+    }
 
-        // Create a pixmap from the buffer.
-        let mut pixmap =
-            PixmapMut::from_bytes(bytemuck::cast_slice_mut(buf), size.width, size.height).unwrap();
+    fn drop_window(&mut self) {
+        self.current_window = None;
+    }
 
-        // Fill with a solid color.
-        pixmap.fill(Color::from_rgba(0.9, 0.9, 0.9, 1.0).unwrap());
+    fn draw(
+        &mut self,
+        gdisplay: &RefCell<Display>,
+        surface: &mut Surface,
+        size: PhysicalSize<u32>,
+    ) {
+        use piet::{RenderContext as _, Text as _, TextLayout as _, TextLayoutBuilder as _};
 
-        let line_x = 10;
-        let mut line_y = 10;
-        let mut buffer = cosmic_text::Buffer::new(&mut self.fonts, Metrics::new(12.0, 1.0));
-        let mut cache = cosmic_text::SwashCache::new();
+        // Create a drawing context.
+        let mut gdisplay = gdisplay.borrow_mut();
+        let mut context = RenderContext::new(&mut gdisplay, surface, size.width, size.height)
+            .expect("Failed to create render context");
 
-        let mut buffer = buffer.borrow_with(&mut self.fonts);
+        // Fill the background.
+        context.clear(None, piet::Color::rgb(0.9, 0.9, 0.9));
+
+        let mut current_y = 10.0;
 
         // Draw each HTTP request.
         for request in &self.requests {
             // Draw the text.
-            buffer.set_size(
-                size.width as f32,  // - 20.0,
-                size.height as f32, // - line_y as f32 - 10.0,
-            );
-
-            let attrs = cosmic_text::Attrs::new();
             let text = request
                 .status
                 .with_status(|status| format!("{}\r\n{}", request.url, status));
-            buffer.set_text(&text, attrs);
+            let layout = context
+                .text()
+                .new_text_layout(text)
+                .font(piet::FontFamily::SERIF, 12.0)
+                .build()
+                .unwrap();
+            context.draw_text(&layout, (10.0, current_y));
 
-            // Shape the text.
-            buffer.shape_until_scroll();
-
-            // Draw the text.
-            buffer.draw(
-                &mut cache,
-                cosmic_text::Color::rgb(0xA, 0xA, 0xA),
-                |x, y, w, h, color| {
-                    // Draw the rectangle to the pixmap.
-                    let color = Color::from_rgba8(color.r(), color.g(), color.b(), color.a());
-
-                    // Draw the rectangle to the pixmap.
-                    let paint = Paint {
-                        shader: Shader::SolidColor(color),
-                        ..Default::default()
-                    };
-                    pixmap.fill_rect(
-                        Rect::from_xywh(
-                            x as f32 + line_x as f32,
-                            y as f32 + line_y as f32,
-                            w as f32,
-                            h as f32,
-                        )
-                        .unwrap(),
-                        &paint,
-                        Transform::identity(),
-                        None,
-                    );
-                },
-            );
-
-            // Move to the next line.
-            line_y += buffer.size().1 as u32 + 100;
-            buffer.lines.clear();
+            // Move the text down.
+            current_y += layout.size().height + 10.0;
         }
 
-        // Draw to the surface.
-        gc.set_buffer(buf, size.width as u16, size.height as u16);
+        // Flush the drawing context.
+        context.finish().unwrap();
+        context.status().unwrap();
     }
 }
 
