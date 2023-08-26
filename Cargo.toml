@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["John Nunley <jtnunley01@gmail.com>"]
 description = "Use winit like an async runtime"
 repository = "https://github.com/notgull/async-winit"
-license = "AGPL-3.0-or-later"
+license = "LGPL-3.0-or-later OR MPL-2.0"
 
 [dependencies]
 async-broadcast = "0.5.1"
@@ -22,6 +22,9 @@ raw-window-handle = "0.5.2"
 slab = "0.4.8"
 winit = { version = "0.28.3", default-features = false }
 
+[build-dependencies]
+cfg_aliases = "0.1.1"
+
 [dev-dependencies]
 futures-lite = { version = "1.13.0", features = ["std"], default-features = false }
 softbuffer = { version = "0.2.0", default-features = false, features = ["x11"] }
@@ -37,6 +40,3 @@ android-game-activity = ["winit/android-game-activity"]
 
 [workspace]
 members = ["smol_example"]
-
-[build-dependencies]
-cfg_aliases = "0.1.1"

@@ -15,6 +15,12 @@ All changes submitted to this repository are run through GitHub Actions and the 
 
 [`ci.yml`]: https://github.com/notgull/async-winit/blob/main/.github/workflows/ci.yml
 
-## Contributor License Agreement
+## DCO
 
-When opening a pull request, you will be asked to sign a [Contributor License Agreement (CLA)](https://cla-assistant.io/notgull/async-winit). This is a legal document that confirms you are granting us permission to use your contribution. You only need to sign the CLA once.
+As an alternative to a Contributor License Agreement, this project uses a [Developer Certificate of Origin (DCO)](./DCO.txt) to ensure that contributors own the copyright terms of their contributions. In order to assert that you agree to the terms of the DCO, you must add the following line to every commit:
+
+```
+Signed-off-by: Your Name <email>
+```
+
+This can be done automatically by appending the `-s` option to `git commit`.
