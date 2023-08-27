@@ -27,7 +27,7 @@ use crate::window::WindowBuilder;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::Waker;
 use std::time::{Duration, Instant};
@@ -84,6 +84,11 @@ enum TimerOp {
 impl<TS: ThreadSafety> Reactor<TS> {
     /// Create an empty reactor.
     pub(crate) fn new() -> Self {
+        static ALREADY_EXISTS: AtomicBool = AtomicBool::new(false);
+        if ALREADY_EXISTS.swap(true, Ordering::SeqCst) {
+            panic!("Only one instance of `Reactor` can exist at a time");
+        }
+
         Reactor {
             exit_code: <TS::AtomicI64>::new(0),
             proxy: TS::OnceLock::new(),
@@ -251,6 +256,10 @@ impl<TS: ThreadSafety> Reactor<TS> {
                 break;
             }
         }
+    }
+
+    pub fn evl_ops_len(&self) -> usize {
+        self.evl_ops.1.len()
     }
 
     /// Post an event to the reactor.

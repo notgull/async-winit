@@ -161,6 +161,10 @@ impl<T> __private::Receiver<T> for Rc<RefCell<VecDeque<T>>> {
     fn try_recv(&self) -> Option<T> {
         self.borrow_mut().pop_front()
     }
+
+    fn len(&self) -> usize {
+        self.borrow().len()
+    }
 }
 
 impl<T> __private::ConcurrentQueue<T> for RefCell<VecDeque<T>> {
@@ -362,6 +366,10 @@ pub(crate) mod thread_safe {
         fn try_recv(&self) -> Option<T> {
             self.try_recv().ok()
         }
+
+        fn len(&self) -> usize {
+            self.len()
+        }
     }
 
     impl<T> __private::ConcurrentQueue<T> for ConcurrentQueue<T> {
@@ -480,6 +488,7 @@ pub(crate) mod __private {
     pub trait Receiver<T> {
         fn capacity(&self) -> usize;
         fn try_recv(&self) -> Option<T>;
+        fn len(&self) -> usize;
     }
 
     #[doc(hidden)]

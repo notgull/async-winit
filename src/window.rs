@@ -364,7 +364,7 @@ impl WindowBuilder {
     /// Build a new window.
     pub async fn build<TS: ThreadSafety>(self) -> Result<Window<TS>, OsError> {
         let (tx, rx) = oneoff();
-        let reactor = TS::Rc::new(Reactor::new());
+        let reactor = TS::get_reactor();
         reactor
             .push_event_loop_op(EventLoopOp::BuildWindow {
                 builder: Box::new(self),
