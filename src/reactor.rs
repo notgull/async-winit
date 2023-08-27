@@ -231,7 +231,9 @@ impl<TS: ThreadSafety> Reactor<TS> {
 
     /// Push an event loop operation.
     pub(crate) async fn push_event_loop_op(&self, op: EventLoopOp<TS>) {
-        self.evl_ops.0.send(op).await;
+        if self.evl_ops.0.send(op).await.is_err() {
+            panic!("Failed to push event loop operation");
+        }
 
         // Notify the event loop that there is a new operation.
         self.notify();

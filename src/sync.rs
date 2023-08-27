@@ -22,7 +22,6 @@ pub(crate) use __private::__ThreadSafety;
 use core::cell::{Cell, RefCell, RefMut};
 use core::convert::Infallible;
 use core::ops::Add;
-use core::task::Waker;
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -32,6 +31,11 @@ use std::thread;
 pub(crate) mod prelude {
     pub use super::__private::{Atomic, Mutex, OnceLock};
 }
+
+pub use thread_safe::ThreadSafe;
+
+/// The default thread safe type to use.
+pub type DefaultThreadSafety = ThreadSafe;
 
 /// A token that can be used to indicate whether the current implementation should be thread-safe or
 /// not.
@@ -52,8 +56,8 @@ impl __ThreadSafety for ThreadUnsafe {
     type AtomicU64 = Cell<u64>;
     type AtomicI64 = Cell<i64>;
 
-    type Receiver<T> = UnsyncChannel<T>;
-    type Sender<T> = UnsyncChannel<T>;
+    type Receiver<T> = Rc<RefCell<VecDeque<T>>>;
+    type Sender<T> = Rc<RefCell<VecDeque<T>>>;
     type Rc<T> = Rc<T>;
 
     type ConcurrentQueue<T> = RefCell<VecDeque<T>>;
@@ -61,10 +65,9 @@ impl __ThreadSafety for ThreadUnsafe {
     type OnceLock<T> = once_cell::unsync::OnceCell<T>;
 
     fn channel_bounded<T>(capacity: usize) -> (Self::Sender<T>, Self::Receiver<T>) {
-        let sender_end = Rc::new(RefCell::new(VecDeque::with_capacity(capacity)));
-        let receiver_end = sender_end.clone();
+        let queue = Rc::new(RefCell::new(VecDeque::with_capacity(capacity)));
 
-        (UnsyncChannel(sender_end), UnsyncChannel(receiver_end))
+        (queue.clone(), queue)
     }
 
     fn get_reactor() -> Self::Rc<Reactor<Self>> {
@@ -140,35 +143,23 @@ impl<T: Copy> __private::Atomic<T> for Cell<T> {
     }
 }
 
-impl<T> __private::Sender<T> for UnsyncChannel<T> {
-    type Send<'a> = core::future::Ready<()> where Self: 'a;
+impl<T> __private::Sender<T> for Rc<RefCell<VecDeque<T>>> {
+    type Error = Infallible;
+    type Send<'a> = core::future::Ready<Result<(), Self::Error>> where Self: 'a;
 
     fn send(&self, value: T) -> Self::Send<'_> {
-        self.push(value);
-        core::future::ready(())
+        self.borrow_mut().push_back(value);
+        core::future::ready(Ok(()))
     }
 }
 
-impl<T> __private::Receiver<T> for UnsyncChannel<T> {
+impl<T> __private::Receiver<T> for Rc<RefCell<VecDeque<T>>> {
     fn capacity(&self) -> usize {
         usize::MAX
     }
 
     fn try_recv(&self) -> Option<T> {
-        self.pop()
-    }
-}
-
-#[doc(hidden)]
-pub struct UnsyncChannel<T>(Rc<RefCell<VecDeque<T>>>);
-
-impl<T> UnsyncChannel<T> {
-    fn push(&self, value: T) {
-        self.0.borrow_mut().push_back(value);
-    }
-
-    fn pop(&self) -> Option<T> {
-        self.0.borrow_mut().pop_front()
+        self.borrow_mut().pop_front()
     }
 }
 
@@ -255,6 +246,189 @@ impl<T> __private::Rc<T> for std::rc::Rc<T> {
     }
 }
 
+pub(crate) mod thread_safe {
+    use super::*;
+
+    use concurrent_queue::ConcurrentQueue;
+    use std::sync::atomic;
+    use std::sync::{Arc, Mutex};
+
+    /// Use thread-safe primitives.
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct ThreadSafe {
+        _private: (),
+    }
+
+    impl ThreadSafety for ThreadSafe {}
+
+    impl __ThreadSafety for ThreadSafe {
+        type Error = Box<dyn std::error::Error + Send + Sync>;
+
+        type AtomicI64 = atomic::AtomicI64;
+        type AtomicUsize = atomic::AtomicUsize;
+        type AtomicU64 = atomic::AtomicU64;
+
+        type Sender<T> = async_channel::Sender<T>;
+        type Receiver<T> = async_channel::Receiver<T>;
+
+        type ConcurrentQueue<T> = ConcurrentQueue<T>;
+        type Mutex<T> = Mutex<T>;
+        type OnceLock<T> = once_cell::sync::OnceCell<T>;
+        type Rc<T> = Arc<T>;
+
+        fn channel_bounded<T>(capacity: usize) -> (Self::Sender<T>, Self::Receiver<T>) {
+            async_channel::bounded(capacity)
+        }
+        fn get_reactor() -> Self::Rc<crate::reactor::Reactor<Self>>
+        where
+            Self: super::ThreadSafety,
+        {
+            use once_cell::sync::OnceCell;
+
+            static REACTOR: OnceCell<Arc<Reactor<ThreadSafe>>> = OnceCell::new();
+
+            REACTOR.get_or_init(|| Arc::new(Reactor::new())).clone()
+        }
+    }
+
+    impl __private::Atomic<i64> for atomic::AtomicI64 {
+        fn new(value: i64) -> Self {
+            Self::new(value)
+        }
+
+        fn fetch_add(&self, value: i64, order: atomic::Ordering) -> i64 {
+            self.fetch_add(value, order)
+        }
+
+        fn load(&self, order: atomic::Ordering) -> i64 {
+            self.load(order)
+        }
+
+        fn store(&self, value: i64, order: atomic::Ordering) {
+            self.store(value, order)
+        }
+    }
+
+    impl __private::Atomic<usize> for atomic::AtomicUsize {
+        fn new(value: usize) -> Self {
+            Self::new(value)
+        }
+
+        fn fetch_add(&self, value: usize, order: atomic::Ordering) -> usize {
+            self.fetch_add(value, order)
+        }
+
+        fn load(&self, order: atomic::Ordering) -> usize {
+            self.load(order)
+        }
+
+        fn store(&self, value: usize, order: atomic::Ordering) {
+            self.store(value, order)
+        }
+    }
+
+    impl __private::Atomic<u64> for atomic::AtomicU64 {
+        fn new(value: u64) -> Self {
+            Self::new(value)
+        }
+
+        fn fetch_add(&self, value: u64, order: atomic::Ordering) -> u64 {
+            self.fetch_add(value, order)
+        }
+
+        fn load(&self, order: atomic::Ordering) -> u64 {
+            self.load(order)
+        }
+
+        fn store(&self, value: u64, order: atomic::Ordering) {
+            self.store(value, order)
+        }
+    }
+
+    impl<T> __private::Sender<T> for async_channel::Sender<T> {
+        type Error = async_channel::SendError<T>;
+        type Send<'a> = async_channel::Send<'a, T> where Self: 'a;
+
+        fn send(&self, value: T) -> Self::Send<'_> {
+            self.send(value)
+        }
+    }
+
+    impl<T> __private::Receiver<T> for async_channel::Receiver<T> {
+        fn capacity(&self) -> usize {
+            self.capacity().unwrap()
+        }
+
+        fn try_recv(&self) -> Option<T> {
+            self.try_recv().ok()
+        }
+    }
+
+    impl<T> __private::ConcurrentQueue<T> for ConcurrentQueue<T> {
+        type TryIter<'a> = concurrent_queue::TryIter<'a, T> where Self: 'a;
+
+        fn bounded(capacity: usize) -> Self {
+            Self::bounded(capacity)
+        }
+
+        fn push(&self, value: T) -> Result<(), T> {
+            self.push(value).map_err(|e| e.into_inner())
+        }
+
+        fn pop(&self) -> Option<T> {
+            self.pop().ok()
+        }
+
+        fn capacity(&self) -> usize {
+            self.capacity().unwrap()
+        }
+
+        fn try_iter(&self) -> Self::TryIter<'_> {
+            self.try_iter()
+        }
+    }
+
+    impl<T> __private::Mutex<T> for Mutex<T> {
+        type Error = Infallible;
+        type Lock<'a> = std::sync::MutexGuard<'a, T> where Self: 'a;
+
+        fn new(value: T) -> Self {
+            Self::new(value)
+        }
+
+        fn lock(&self) -> Result<Self::Lock<'_>, Self::Error> {
+            Ok(self.lock().unwrap_or_else(|e| e.into_inner()))
+        }
+    }
+
+    impl<T> __private::OnceLock<T> for once_cell::sync::OnceCell<T> {
+        fn new() -> Self {
+            Self::new()
+        }
+
+        fn get(&self) -> Option<&T> {
+            self.get()
+        }
+
+        fn set(&self, value: T) -> Result<(), T> {
+            self.set(value)
+        }
+
+        fn get_or_init<F>(&self, f: F) -> &T
+        where
+            F: FnOnce() -> T,
+        {
+            self.get_or_init(f)
+        }
+    }
+
+    impl<T> __private::Rc<T> for Arc<T> {
+        fn new(value: T) -> Self {
+            Self::new(value)
+        }
+    }
+}
+
 pub(crate) mod __private {
     use core::fmt::{Debug, Display};
     use core::future::Future;
@@ -295,7 +469,8 @@ pub(crate) mod __private {
 
     #[doc(hidden)]
     pub trait Sender<T> {
-        type Send<'a>: Future<Output = ()> + 'a
+        type Error;
+        type Send<'a>: Future<Output = Result<(), Self::Error>> + 'a
         where
             Self: 'a;
         fn send(&self, value: T) -> Self::Send<'_>;

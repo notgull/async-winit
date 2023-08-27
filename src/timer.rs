@@ -17,7 +17,7 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 */
 
 // This file is partially derived from `async-io`, which was originally created by Stjepan Glavina
-// and contributers. It was originally released under the MIT license and Apache 2.0 license.
+// and contributors. It was originally released under the MIT license and Apache 2.0 license.
 
 //! Asynchronous timers.
 
@@ -42,7 +42,7 @@ use futures_lite::stream::Stream;
 ///
 /// [`ControlFlow::WaitUntil`]: crate::event_loop::ControlFlow::WaitUntil
 /// [`Timer`]: https://docs.rs/async-io/latest/async_io/timer/struct.Timer.html
-pub struct Timer<TS: ThreadSafety> {
+pub struct Timer<TS: ThreadSafety = crate::DefaultThreadSafety> {
     /// Static reference to the reactor.
     reactor: TS::Rc<Reactor<TS>>,
 

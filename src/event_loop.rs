@@ -51,6 +51,7 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 use crate::handler::Handler;
 use crate::reactor::{EventLoopOp, Reactor};
 use crate::sync::ThreadSafety;
+use crate::DefaultThreadSafety;
 
 use std::convert::Infallible;
 use std::fmt;
@@ -90,7 +91,7 @@ pub struct Wakeup {
 /// thread to be used.
 ///
 /// [`Window`]: crate::window::Window
-pub struct EventLoop<TS: ThreadSafety> {
+pub struct EventLoop<TS: ThreadSafety = DefaultThreadSafety> {
     /// The underlying event loop.
     pub(crate) inner: winit::event_loop::EventLoop<Wakeup>,
 
@@ -110,7 +111,7 @@ impl<TS: ThreadSafety> fmt::Debug for EventLoop<TS> {
 /// its previous use cases don't directly require the window target to be passed in. However, it is
 /// still useful for some things, like indicating the need to exit the application or getting
 /// available monitors.
-pub struct EventLoopWindowTarget<TS: ThreadSafety> {
+pub struct EventLoopWindowTarget<TS: ThreadSafety = DefaultThreadSafety> {
     /// The associated reactor, cached for convenience.
     reactor: TS::Rc<Reactor<TS>>,
 
