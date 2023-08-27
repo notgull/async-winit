@@ -45,6 +45,6 @@ pub mod event {
 #[doc(inline)]
 pub use winit::{dpi, error, monitor};
 
-pub use handler::{Event, Handler, WaitGuard, WaitMany, WaitOnce};
+pub use handler::{Event, Handler, Waiter};
 pub use sync::{ThreadSafety, ThreadUnsafe};
 pub use timer::Timer;

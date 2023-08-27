@@ -77,20 +77,20 @@ fn main2(event_loop: EventLoop<ThreadUnsafe>) {
 
         loop {
             // Wait for the application to become resumed, poll the executor while we do.
-            executor.run(target.resumed()).await;
+            executor.run(target.resumed().wait()).await;
 
             // Create a window.
             let window = Window::<ThreadUnsafe>::new().await.unwrap();
             state.borrow_mut().use_window(&window);
 
             // Wait for the application to be suspended.
-            let mut suspend_guard = target.suspended().wait_guard();
+            let mut suspend_guard = target.suspended().wait();
 
             // Wait for the window to close.
             let mut wait_for_close = executor.spawn({
                 let window = window.clone();
                 async move {
-                    window.close_requested().wait_once().await;
+                    window.close_requested().await;
                     None
                 }
             });
@@ -103,11 +103,11 @@ fn main2(event_loop: EventLoop<ThreadUnsafe>) {
 
                 async move {
                     let mut graphics_context = None;
-                    let mut draw_guard = window.redraw_requested().wait_guard();
+                    let mut draw_guard = window.redraw_requested().wait();
 
                     loop {
                         // Wait until we need to draw.
-                        let _guard = draw_guard.wait().await;
+                        let _guard = draw_guard.hold().await;
 
                         // Get the window's size.
                         let size = window.inner_size().await;
@@ -146,7 +146,7 @@ fn main2(event_loop: EventLoop<ThreadUnsafe>) {
                 async move {
                     window
                         .received_character()
-                        .wait_many()
+                        .wait()
                         .for_each(|ch| {
                             if (ch == 'R' || ch == 'r') && !state.borrow().running {
                                 run_again.try_send(()).ok();
@@ -158,7 +158,7 @@ fn main2(event_loop: EventLoop<ThreadUnsafe>) {
 
             // Run the executor until either the window closes or the application suspends.
             let hold_guard = async {
-                let hold_guard = suspend_guard.wait().await;
+                let hold_guard = suspend_guard.hold().await;
                 Some(hold_guard)
             }
             .or(executor.run(&mut wait_for_close))
@@ -169,8 +169,8 @@ fn main2(event_loop: EventLoop<ThreadUnsafe>) {
                 rerun_http.cancel().await;
                 wait_for_close.cancel().await;
                 draw.cancel().await;
-                drop((window, guard));
                 state.borrow_mut().drop_window();
+                drop((window, guard));
             } else {
                 target.exit().await;
             }

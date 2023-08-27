@@ -22,13 +22,13 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 //! `winit` applications. The `Filter` type can be provided events, and will send those events to this
 //! library's event handlers.
 
-use std::cell::Cell;
+use std::cmp;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
-use std::time::Duration;
+use std::time::Instant;
 
 use futures_lite::prelude::*;
 use parking::Parker;
@@ -55,23 +55,30 @@ pub enum ReturnOrFinish<O, T> {
 /// This type takes events and passes them to the event handlers. It also handles the `async` contexts
 /// that are waiting for events.
 pub struct Filter<TS: ThreadSafety> {
-    /// The timeout to wait for.
-    timeout: Option<Duration>,
+    /// The deadline to wait until.
+    deadline: Option<Instant>,
 
     /// The wakers to wake up later.
     wakers: Vec<Waker>,
 
-    /// The parker to use.
+    /// The parker to use for posting.
     parker: Parker,
 
     /// The notifier.
     notifier: Arc<ReactorWaker>,
 
     /// The waker version of `notifier`.
+    ///
+    /// Keeping it cached like this is more efficient than creating a new waker every time.
     notifier_waker: Waker,
 
-    /// A holding pattern waker.
-    holding_waker: Waker,
+    /// A waker connected to `parker`.
+    ///
+    /// Again, it is more efficient to keep it cached like this.
+    parker_waker: Waker,
+
+    /// The future has indicated that it wants to yield.
+    yielding: bool,
 
     /// The reactor.
     reactor: TS::Rc<Reactor<TS>>,
@@ -81,13 +88,7 @@ impl<TS: ThreadSafety> Filter<TS> {
     /// Create a new filter from an event loop.
     ///
     /// The future is polled once before returning to set up event handlers.
-    pub fn new<F>(
-        inner: &EventLoop<Wakeup>,
-        future: Pin<&mut F>,
-    ) -> ReturnOrFinish<Filter<TS>, F::Output>
-    where
-        F: Future,
-    {
+    pub fn new(inner: &EventLoop<Wakeup>) -> Filter<TS> {
         let reactor = Reactor::<TS>::get();
 
         // Create a waker to wake us up.
@@ -101,28 +102,21 @@ impl<TS: ThreadSafety> Filter<TS> {
 
         // Parker/unparker pair.
         let (parker, unparker) = parking::pair();
-
-        // Create another waker to hold us in the holding pattern.
-        let holding_waker = Waker::from(Arc::new(HoldingPattern {
+        let parker_waker = Waker::from(Arc::new(EventPostWaker {
             reactor_waker: notifier.clone(),
             unparker,
         }));
 
-        // Poll the future once to set up event handlers.
-        let mut cx = Context::from_waker(&notifier_waker);
-        if let Poll::Ready(i) = future.poll(&mut cx) {
-            return ReturnOrFinish::FutureReturned(i);
-        }
-
-        ReturnOrFinish::Output(Filter {
-            timeout: None,
+        Filter {
+            deadline: None,
             wakers: vec![],
             parker,
             notifier,
             notifier_waker,
-            holding_waker,
+            parker_waker,
+            yielding: false,
             reactor,
-        })
+        }
     }
 
     /// Handle an event.
@@ -130,7 +124,7 @@ impl<TS: ThreadSafety> Filter<TS> {
     /// This function will block on the future if it is in the holding pattern.
     pub fn handle_event<F>(
         &mut self,
-        mut future: Pin<&mut F>,
+        future: Pin<&mut F>,
         event: Event<'_, Wakeup>,
         elwt: &EventLoopWindowTarget<Wakeup>,
         flow: &mut ControlFlow,
@@ -138,104 +132,139 @@ impl<TS: ThreadSafety> Filter<TS> {
     where
         F: Future,
     {
-        let output = Cell::new(None);
+        // Create a future that can be polled freely.
+        let mut output = ReturnOrFinish::Output(());
+        let future = {
+            let output = &mut output;
+            async move {
+                *output = ReturnOrFinish::FutureReturned(future.await);
+            }
+        };
+        futures_lite::pin!(future);
 
-        // Function for blocking on holding.
-        macro_rules! block_on {
-            ($fut:expr) => {{
-                let fut = $fut;
-                futures_lite::pin!(fut);
-                let mut cx = Context::from_waker(&self.holding_waker);
-
-                loop {
-                    self.notifier.awake.store(true, Ordering::SeqCst);
-
-                    // Drain the incoming queue of requests.
-                    // TODO: Poll timers as well?
-                    self.reactor.drain_loop_queue(elwt);
-
-                    if let Poll::Ready(i) = fut.as_mut().poll(&mut cx) {
-                        if let Some(result) = output.take() {
-                            return ReturnOrFinish::FutureReturned(result);
-                        }
-
-                        break i;
-                    }
-
-                    // Drain the incoming queue of requests.
-                    // TODO: Poll timers as well?
-                    self.reactor.drain_loop_queue(elwt);
-
-                    self.notifier.awake.store(false, Ordering::SeqCst);
-                    self.parker.park();
-                }
-            }};
-        }
-
-        let mut falling_asleep = false;
-
-        match &event {
+        // Some events have special meanings.
+        let about_to_sleep = match &event {
             Event::NewEvents(_) => {
-                // We are now awake.
+                // Stop yielding now.
+                self.yielding = false;
+
+                // We were previously asleep and are now awake.
                 self.notifier.awake.store(true, Ordering::SeqCst);
 
                 // Figure out how long we should wait for.
-                self.timeout = self.reactor.process_timers(&mut self.wakers);
+                self.deadline = self.reactor.process_timers(&mut self.wakers);
+
+                // We are not about to fall asleep.
+                false
             }
 
-            Event::MainEventsCleared => {
-                falling_asleep = true;
+            Event::RedrawEventsCleared => {
+                // We are about to fall asleep, so make sure that the future knows it.
+                self.notifier.awake.store(false, Ordering::SeqCst);
+
+                // We are about to fall asleep.
+                true
             }
 
-            _ => {}
+            _ => {
+                // We are not about to fall asleep.
+                false
+            }
+        };
+
+        // Notify the reactor with our event.
+        let notifier = self.reactor.post_event(event);
+        futures_lite::pin!(notifier);
+
+        // Try to poll it once.
+        let mut cx = Context::from_waker(&self.parker_waker);
+        if notifier.as_mut().poll(&mut cx).is_pending() {
+            // We've hit a point where the future is interested, stop yielding.
+            self.yielding = false;
+
+            // Poll the future in parallel with the user's future.
+            let driver = future.as_mut().or(notifier);
+            futures_lite::pin!(driver);
+
+            // Drain the request queue before anything else.
+            self.reactor.drain_loop_queue(elwt);
+
+            // Block on the parker/unparker pair.
+            loop {
+                if let Poll::Ready(()) = driver.as_mut().poll(&mut cx) {
+                    break;
+                }
+
+                // Drain the incoming queue of requests.
+                self.reactor.drain_loop_queue(elwt);
+
+                // Handle timers.
+                let deadline = {
+                    let current_deadline = self.reactor.process_timers(&mut self.wakers);
+
+                    match (current_deadline, self.deadline) {
+                        (None, None) => None,
+                        (Some(x), None) | (None, Some(x)) => Some(x),
+                        (Some(a), Some(b)) => Some(cmp::min(a, b)),
+                    }
+                };
+
+                // Wake any wakers that need to be woken.
+                for waker in self.wakers.drain(..) {
+                    waker.wake();
+                }
+
+                // Park the thread until it is notified, or until the timeout.
+                match deadline {
+                    None => self.parker.park(),
+                    Some(deadline) => {
+                        self.parker.park_deadline(deadline);
+                    }
+                }
+            }
         }
 
-        if falling_asleep {
-            for waker in self.wakers.drain(..) {
-                // Don't let a panicking waker blow everything up.
-                std::panic::catch_unwind(|| waker.wake()).ok();
-            }
-        }
-
-        // Post the event, block on it and poll the future at the same time.
-        let posting = self.reactor.post_event(event).or({
-            let future = future.as_mut();
-            let output = &output;
-
-            async move {
-                output.set(Some(future.await));
-            }
-        });
-
-        block_on!(posting);
-
-        // Check the notification.
-        if self.notifier.notified.swap(false, Ordering::SeqCst) {
-            // We were notified, so we should poll the future.
+        // If the future is still notified, we should poll it.
+        while !self.yielding && self.notifier.notified.swap(false, Ordering::SeqCst) {
             let mut cx = Context::from_waker(&self.notifier_waker);
-            if let Poll::Ready(i) = future.poll(&mut cx) {
-                return ReturnOrFinish::FutureReturned(i);
+            if future.as_mut().poll(&mut cx).is_pending() {
+                // If the future is *still* notified, it's probably calling future::yield_now(), which
+                // indicates that it wants to stop hogging the event loop. Indicate that we should stop
+                // polling it until we get NewEvents.
+                if self.notifier.notified.load(Ordering::SeqCst) {
+                    self.yielding = true;
+                }
+
+                // Drain the incoming queue of requests.
+                self.reactor.drain_loop_queue(elwt);
             }
         }
 
-        if falling_asleep {
-            // Enter the sleeping state.
-            self.notifier.awake.store(false, Ordering::SeqCst);
+        // Wake everything up if we're about to sleep.
+        if about_to_sleep {
+            self.reactor.drain_loop_queue(elwt);
+            for waker in self.wakers.drain(..) {
+                waker.wake();
+            }
         }
 
-        // If we were just notified, don't bother sending a wakeup and just poll.
-        if self.notifier.notified.load(Ordering::Acquire) {
-            flow.set_poll()
-        } else if let Some(code) = self.reactor.exit_requested() {
+        // Set the control flow.
+        if let Some(code) = self.reactor.exit_requested() {
+            // The user wants to exit.
             flow.set_exit_with_code(code);
+        } else if self.yielding {
+            // The future wants to be polled again as soon as possible.
+            flow.set_poll();
+        } else if let Some(deadline) = self.deadline {
+            // The future wants to be polled again when the deadline is reached.
+            flow.set_wait_until(deadline);
         } else {
-            match self.timeout {
-                Some(timeout) => flow.set_wait_timeout(timeout),
-                None => flow.set_wait(),
-            }
+            // The future wants to poll.
+            flow.set_wait();
         }
 
-        ReturnOrFinish::Output(())
+        // Return the output if any.
+        output
     }
 }
 
@@ -247,6 +276,8 @@ pub(crate) struct ReactorWaker {
     notified: AtomicBool,
 
     /// Whether or not the reactor is awake.
+    ///
+    /// The reactor is awake when we don't
     awake: AtomicBool,
 }
 
@@ -281,12 +312,15 @@ impl Wake for ReactorWaker {
     }
 }
 
-struct HoldingPattern {
+struct EventPostWaker {
+    /// The underlying reactor waker.
     reactor_waker: Arc<ReactorWaker>,
+
+    /// The unparker for the notifier.
     unparker: parking::Unparker,
 }
 
-impl Wake for HoldingPattern {
+impl Wake for EventPostWaker {
     fn wake(self: Arc<Self>) {
         self.reactor_waker.notify();
         self.unparker.unpark();

@@ -51,10 +51,7 @@ impl<TS: ThreadSafety> EventLoopExtRunReturn for EventLoop<TS> {
 
         pin!(fut);
 
-        let mut filter = match Filter::<TS>::new(inner, fut.as_mut()) {
-            ReturnOrFinish::FutureReturned(fut) => return ReturnOrFinish::FutureReturned(fut),
-            ReturnOrFinish::Output(filter) => filter,
-        };
+        let mut filter = Filter::<TS>::new(inner);
 
         let mut output = None;
         let exit = inner.run_return({

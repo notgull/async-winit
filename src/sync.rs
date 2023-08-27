@@ -22,12 +22,12 @@ pub(crate) use __private::__ThreadSafety;
 use core::cell::{Cell, RefCell, RefMut};
 use core::convert::Infallible;
 use core::ops::Add;
+use core::task::Waker;
 
 use std::collections::VecDeque;
+use std::rc::Rc;
 use std::sync::atomic;
 use std::thread;
-
-use unsend::channel as us_channel;
 
 pub(crate) mod prelude {
     pub use super::__private::{Atomic, Mutex, OnceLock};
@@ -52,16 +52,19 @@ impl __ThreadSafety for ThreadUnsafe {
     type AtomicU64 = Cell<u64>;
     type AtomicI64 = Cell<i64>;
 
-    type Receiver<T> = us_channel::Receiver<T>;
-    type Sender<T> = us_channel::Sender<T>;
-    type Rc<T> = std::rc::Rc<T>;
+    type Receiver<T> = UnsyncChannel<T>;
+    type Sender<T> = UnsyncChannel<T>;
+    type Rc<T> = Rc<T>;
 
     type ConcurrentQueue<T> = RefCell<VecDeque<T>>;
     type Mutex<T> = RefCell<T>;
     type OnceLock<T> = once_cell::unsync::OnceCell<T>;
 
-    fn channel_bounded<T>(_capacity: usize) -> (Self::Sender<T>, Self::Receiver<T>) {
-        us_channel::channel()
+    fn channel_bounded<T>(capacity: usize) -> (Self::Sender<T>, Self::Receiver<T>) {
+        let sender_end = Rc::new(RefCell::new(VecDeque::with_capacity(capacity)));
+        let receiver_end = sender_end.clone();
+
+        (UnsyncChannel(sender_end), UnsyncChannel(receiver_end))
     }
 
     fn get_reactor() -> Self::Rc<Reactor<Self>> {
@@ -82,19 +85,17 @@ impl __ThreadSafety for ThreadUnsafe {
             panic!("The reactor must be created on the main thread");
         }
 
-        REACTOR
-            .try_with(|reactor| {
-                reactor
-                    .borrow_mut()
-                    .get_or_insert_with(|| std::rc::Rc::new(Reactor::new()))
-                    .clone()
-            })
-            .unwrap_or_else(|_| {
-                // We're in a destructor
-                panic!("The reactor must be created on the main thread");
-            })
+        REACTOR.with(|reactor| {
+            reactor
+                .borrow_mut()
+                .get_or_insert_with(|| std::rc::Rc::new(Reactor::new()))
+                .clone()
+        })
     }
 }
+
+pub(crate) type MutexGuard<'a, T, TS> =
+    <<TS as __ThreadSafety>::Mutex<T> as __private::Mutex<T>>::Lock<'a>;
 
 fn thread_id() -> thread::ThreadId {
     // Get the address of a thread-local variable.
@@ -139,22 +140,35 @@ impl<T: Copy> __private::Atomic<T> for Cell<T> {
     }
 }
 
-impl<T> __private::Sender<T> for us_channel::Sender<T> {
+impl<T> __private::Sender<T> for UnsyncChannel<T> {
     type Send<'a> = core::future::Ready<()> where Self: 'a;
 
     fn send(&self, value: T) -> Self::Send<'_> {
-        self.send(value).ok();
+        self.push(value);
         core::future::ready(())
     }
 }
 
-impl<T> __private::Receiver<T> for us_channel::Receiver<T> {
+impl<T> __private::Receiver<T> for UnsyncChannel<T> {
     fn capacity(&self) -> usize {
         usize::MAX
     }
 
     fn try_recv(&self) -> Option<T> {
-        self.try_recv().ok()
+        self.pop()
+    }
+}
+
+#[doc(hidden)]
+pub struct UnsyncChannel<T>(Rc<RefCell<VecDeque<T>>>);
+
+impl<T> UnsyncChannel<T> {
+    fn push(&self, value: T) {
+        self.0.borrow_mut().push_back(value);
+    }
+
+    fn pop(&self) -> Option<T> {
+        self.0.borrow_mut().pop_front()
     }
 }
 
@@ -226,6 +240,13 @@ impl<T> __private::OnceLock<T> for once_cell::unsync::OnceCell<T> {
     fn set(&self, value: T) -> Result<(), T> {
         self.set(value)
     }
+
+    fn get_or_init<F>(&self, f: F) -> &T
+    where
+        F: FnOnce() -> T,
+    {
+        self.get_or_init(f)
+    }
 }
 
 impl<T> __private::Rc<T> for std::rc::Rc<T> {
@@ -244,9 +265,9 @@ pub(crate) mod __private {
     pub trait __ThreadSafety: Sized {
         type Error: Display + Debug;
 
+        type AtomicI64: Atomic<i64>;
         type AtomicUsize: Atomic<usize>;
         type AtomicU64: Atomic<u64>;
-        type AtomicI64: Atomic<i64>;
 
         type Sender<T>: Sender<T>;
         type Receiver<T>: Receiver<T>;
@@ -290,6 +311,9 @@ pub(crate) mod __private {
     pub trait OnceLock<T> {
         fn new() -> Self;
         fn get(&self) -> Option<&T>;
+        fn get_or_init<F>(&self, f: F) -> &T
+        where
+            F: FnOnce() -> T;
         fn set(&self, value: T) -> Result<(), T>;
     }
 

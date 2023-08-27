@@ -26,6 +26,7 @@ use crate::window::registration::Registration as WinRegistration;
 use crate::window::WindowBuilder;
 
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::task::Waker;
@@ -52,7 +53,7 @@ pub struct Reactor<T: ThreadSafety> {
     evl_ops: (T::Sender<EventLoopOp<T>>, T::Receiver<EventLoopOp<T>>),
 
     /// The list of windows.
-    windows: T::Mutex<HashMap<WindowId, T::Rc<WinRegistration>>>,
+    windows: T::Mutex<HashMap<WindowId, T::Rc<WinRegistration<T>>>>,
 
     /// The event loop proxy.
     ///
@@ -69,7 +70,7 @@ pub struct Reactor<T: ThreadSafety> {
     timer_id: T::AtomicUsize,
 
     /// Registration for event loop events.
-    pub(crate) evl_registration: GlobalRegistration,
+    pub(crate) evl_registration: GlobalRegistration<T>,
 }
 
 enum TimerOp {
@@ -159,7 +160,7 @@ impl<TS: ThreadSafety> Reactor<TS> {
     }
 
     /// Insert a window into the window list.
-    pub(crate) fn insert_window(&self, id: WindowId) -> TS::Rc<WinRegistration> {
+    pub(crate) fn insert_window(&self, id: WindowId) -> TS::Rc<WinRegistration<TS>> {
         let mut windows = self.windows.lock().unwrap();
         let registration = TS::Rc::new(WinRegistration::new());
         windows.insert(id, registration.clone());
@@ -194,7 +195,7 @@ impl<TS: ThreadSafety> Reactor<TS> {
     }
 
     /// Process timers and return the amount of time to wait.
-    pub(crate) fn process_timers(&self, wakers: &mut Vec<Waker>) -> Option<Duration> {
+    pub(crate) fn process_timers(&self, wakers: &mut Vec<Waker>) -> Option<Instant> {
         // Process incoming timer operations.
         let mut timers = self.timers.lock().unwrap();
         self.process_timer_ops(&mut timers);
@@ -206,14 +207,11 @@ impl<TS: ThreadSafety> Reactor<TS> {
         let ready = std::mem::replace(&mut *timers, pending);
 
         // Figure out how long it will be until the next timer is ready.
-        let timeout = if ready.is_empty() {
-            timers
-                .keys()
-                .next()
-                .map(|(deadline, _)| deadline.saturating_duration_since(now))
+        let deadline = if ready.is_empty() {
+            timers.keys().next().map(|(deadline, _)| *deadline)
         } else {
             // There are timers ready to fire now.
-            Some(Duration::ZERO)
+            Some(now)
         };
 
         drop(timers);
@@ -221,7 +219,7 @@ impl<TS: ThreadSafety> Reactor<TS> {
         // Push wakers for ready timers.
         wakers.extend(ready.into_values());
 
-        timeout
+        deadline
     }
 
     /// Wake up the event loop.
@@ -790,6 +788,73 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
     },
 }
 
+impl<TS: ThreadSafety> fmt::Debug for EventLoopOp<TS> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EventLoopOp::BuildWindow { .. } => f
+                .debug_struct("BuildWindow")
+                .field("builder", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::PrimaryMonitor(_) => f.debug_struct("PrimaryMonitor").finish(),
+            EventLoopOp::AvailableMonitors(_) => f.debug_struct("AvailableMonitors").finish(),
+            EventLoopOp::SetDeviceFilter { .. } => f
+                .debug_struct("SetDeviceFilter")
+                .field("filter", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::InnerPosition { .. } => f
+                .debug_struct("InnerPosition")
+                .field("window", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::OuterPosition { .. } => f
+                .debug_struct("OuterPosition")
+                .field("window", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::SetOuterPosition { .. } => f
+                .debug_struct("SetOuterPosition")
+                .field("window", &"...")
+                .field("position", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::InnerSize { .. } => f
+                .debug_struct("InnerSize")
+                .field("window", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::SetInnerSize { .. } => f
+                .debug_struct("SetInnerSize")
+                .field("window", &"...")
+                .field("size", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::OuterSize { .. } => f
+                .debug_struct("OuterSize")
+                .field("window", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::SetMinInnerSize { .. } => f
+                .debug_struct("SetMinInnerSize")
+                .field("window", &"...")
+                .field("size", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::SetMaxInnerSize { .. } => f
+                .debug_struct("SetMaxInnerSize")
+                .field("window", &"...")
+                .field("size", &"...")
+                .field("waker", &"...")
+                .finish(),
+            _ => {
+                // TODO: got bored
+                f.debug_struct("EventLoopOp").finish()
+            }
+        }
+    }
+}
+
 impl<TS: ThreadSafety> EventLoopOp<TS> {
     /// Run this event loop operation on a window target.
     fn run<T: 'static>(self, target: &winit::event_loop::EventLoopWindowTarget<T>) {
@@ -1122,12 +1187,12 @@ impl<TS: ThreadSafety> EventLoopOp<TS> {
     }
 }
 
-pub(crate) struct GlobalRegistration {
-    pub(crate) resumed: Handler<()>,
-    pub(crate) suspended: Handler<()>,
+pub(crate) struct GlobalRegistration<T: ThreadSafety> {
+    pub(crate) resumed: Handler<(), T>,
+    pub(crate) suspended: Handler<(), T>,
 }
 
-impl GlobalRegistration {
+impl<TS: ThreadSafety> GlobalRegistration<TS> {
     pub(crate) fn new() -> Self {
         Self {
             resumed: Handler::new(),

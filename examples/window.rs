@@ -42,7 +42,7 @@ fn main2(evl: EventLoop<ThreadUnsafe>) {
 
         // Print resize events.
         let print_resize = {
-            window.resized().wait_many().for_each(|new_size| {
+            window.resized().wait().for_each(|new_size| {
                 println!("Window resized to {:?}", new_size);
             })
         };
@@ -63,10 +63,10 @@ fn main2(evl: EventLoop<ThreadUnsafe>) {
             let mut buf = vec![];
 
             async move {
-                let mut waiter = window.redraw_requested().wait_guard();
+                let mut waiter = window.redraw_requested().wait();
 
                 loop {
-                    let _guard = waiter.wait().await;
+                    let _guard = waiter.hold().await;
                     let inner_size = window.inner_size().await;
 
                     // Get the softbuffer.
@@ -92,9 +92,7 @@ fn main2(evl: EventLoop<ThreadUnsafe>) {
         };
 
         // Wait for the window to close.
-        window
-            .close_requested()
-            .wait_once()
+        async { window.close_requested().wait().await }
             .or(print_resize)
             .or(print_position)
             .or(draw)

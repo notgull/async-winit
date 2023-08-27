@@ -48,7 +48,6 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 //!
 //! [`Handler`]: crate::Handler
 
-use crate::filter::ReturnOrFinish;
 use crate::handler::Handler;
 use crate::reactor::{EventLoopOp, Reactor};
 use crate::sync::ThreadSafety;
@@ -262,13 +261,13 @@ impl<TS: ThreadSafety> EventLoopWindowTarget<TS> {
 
     /// Get the handler for the `Resumed` event.
     #[inline]
-    pub fn resumed(&self) -> &Handler<()> {
+    pub fn resumed(&self) -> &Handler<(), TS> {
         &self.reactor.evl_registration.resumed
     }
 
     /// Get the handler for the `Suspended` event.
     #[inline]
-    pub fn suspended(&self) -> &Handler<()> {
+    pub fn suspended(&self) -> &Handler<(), TS> {
         &self.reactor.evl_registration.suspended
     }
 
@@ -324,10 +323,7 @@ impl<TS: ThreadSafety + 'static> EventLoop<TS> {
         let inner = self.inner;
 
         let mut future = Box::pin(future);
-        let mut filter = match crate::filter::Filter::<TS>::new(&inner, future.as_mut()) {
-            ReturnOrFinish::FutureReturned(i) => match i {},
-            ReturnOrFinish::Output(f) => f,
-        };
+        let mut filter = crate::filter::Filter::<TS>::new(&inner);
 
         inner.run(move |event, elwt, flow| {
             filter.handle_event(future.as_mut(), event, elwt, flow);

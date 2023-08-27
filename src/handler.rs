@@ -18,24 +18,17 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 
 //! Handle incoming events.
 
-// TODO: Write more tests of holding.
-
-mod waiters;
-
-use std::future::Future;
-use std::mem::ManuallyDrop;
-use std::ops;
+use std::cell::Cell;
+use std::future::{Future, IntoFuture};
+use std::mem;
+use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
-use async_broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
-use async_lock::Mutex as AsyncMutex;
 use futures_lite::{future, Stream};
 use slab::Slab;
 
-use waiters::{Listener, RegisterResult, Waiters};
+use crate::sync::{MutexGuard, ThreadSafety, __private::*};
 
 /// An event handler.
 ///
@@ -57,481 +50,477 @@ use waiters::{Listener, RegisterResult, Waiters};
 ///
 /// This type does not allocate unless you use any waiting functions; therefore, you only pay overhead
 /// for events that you use.
-pub struct Handler<T: Event> {
-    inner: AtomicPtr<Inner<T>>,
+pub struct Handler<T: Event, TS: ThreadSafety> {
+    /// State of the handler.
+    ///
+    /// `State` is around sixteen words plus the size of `T::Clonable`, and we store around 25 of
+    /// them per instance of `window::Registration`. In the interest of not blowing up the size of
+    /// `Registration`, we allocate this on the heap. Also, since sometimes the event will not ever
+    /// be used, we use a `OnceLock` to avoid allocating the state until it is needed.
+    state: TS::OnceLock<Box<TS::Mutex<State<T>>>>,
 }
 
-struct Inner<T: Event> {
-    /// Queue of waiters for waiting once for a new event.
-    once: Mutex<Waiters<T::Clonable>>,
+struct State<T: Event> {
+    /// Listeners for the event.
+    ///
+    /// These form a linked list.
+    listeners: Slab<Listener>,
 
     /// List of direct listeners.
-    direct: AsyncMutex<Slab<DirectListener<T>>>,
+    directs: Vec<DirectListener<T>>,
 
-    /// Number of holding listeners.
-    holding: AtomicUsize,
+    /// The head and tail of the linked list.
+    head_and_tail: Option<(usize, usize)>,
 
-    /// Generation of holding listeners.
-    holding_gen: AtomicU64,
+    /// The top-level task waiting for this task to finish.
+    waker: Option<Waker>,
 
-    /// Holding state.
-    holding_state: Mutex<Option<HoldState<T::Clonable>>>,
-
-    /// Listeners waiting on a holding state.
-    holding_waiters: event_listener::Event,
-
-    /// Channel for broadcasting events.
-    broadcast: BroadcastSender<T::Clonable>,
-
-    /// The corresponding receiver, to keep it alive.
-    _recv: BroadcastReceiver<T::Clonable>,
+    /// The currently active event.
+    instance: Option<T::Clonable>,
 }
 
 type DirectListener<T> =
     Box<dyn FnMut(&mut <T as Event>::Unique<'_>) -> DirectFuture + Send + 'static>;
 type DirectFuture = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
 
-/// The state of the hold.
-struct HoldState<T> {
-    /// The actual data.
-    data: T,
-
-    /// The generation of the holding listeners.
-    gen: u64,
-
-    /// The number of holding listeners left to observe the event.
-    waiters_left: usize,
-
-    /// Waker for the top-level future.
-    waker: Option<Waker>,
-}
-
-impl<T: Event> Drop for Handler<T> {
-    fn drop(&mut self) {
-        let inner = *self.inner.get_mut();
-
-        if !inner.is_null() {
-            unsafe {
-                let inner = Arc::from_raw(inner);
-                drop(inner);
-            }
-        }
-    }
-}
-
-impl<T: Event> Handler<T> {
-    pub(crate) const fn new() -> Self {
+impl<T: Event, TS: ThreadSafety> Handler<T, TS> {
+    pub(crate) fn new() -> Self {
         Self {
-            inner: AtomicPtr::new(std::ptr::null_mut()),
+            state: TS::OnceLock::new(),
         }
     }
 
     pub(crate) async fn run_with(&self, event: &mut T::Unique<'_>) {
-        let inner = match self.try_inner() {
-            Some(inner) => inner,
+        // If the state hasn't been created yet, return.
+        let state = match self.state.get() {
+            Some(state) => state,
             None => return,
         };
 
-        let clonable = T::downgrade(event);
-        inner
-            .once
-            .lock()
-            .unwrap()
-            .notify(usize::MAX, || clonable.clone());
-
-        // Don't broadcast unless someone is listening.
-        if inner.broadcast.receiver_count() > 1 {
-            inner.broadcast.try_broadcast(clonable).ok();
+        // Run the direct listeners.
+        let mut state_lock = Some(state.lock().unwrap());
+        if self.run_direct_listeners(&mut state_lock, event).await {
+            return;
         }
 
-        // Handle direct listeners.
-        let mut direct = inner.direct.lock().await;
-        let mut remove = vec![];
+        // Set up the listeners to run.
+        {
+            let state = state_lock.get_or_insert_with(|| state.lock().unwrap());
 
-        for (key, listener) in direct.iter_mut() {
-            if listener(event).await {
-                remove.push(key);
+            // If there are no listeners, return.
+            let head = match state.head_and_tail {
+                Some((head, _)) => head,
+                None => return,
+            };
+
+            // Set up the state.
+            state.instance = Some(T::downgrade(event));
+
+            // Notify the first entry in the list.
+            if let Some(waker) = state.notify(head) {
+                waker.wake();
             }
         }
 
-        for key in remove {
-            let _ = direct.remove(key);
-        }
+        // Wait for the listeners to finish running.
+        future::poll_fn(|cx| {
+            let mut state = state_lock.take().unwrap_or_else(|| state.lock().unwrap());
 
-        // Handle held listeners.
-        let held = inner.holding.load(Ordering::Acquire);
-        if held > 0 {
-            let gen = inner.holding_gen.fetch_add(1, Ordering::Acquire);
-            let waker = future::poll_fn(|cx| Poll::Ready(cx.waker().clone())).await;
-
-            {
-                let mut hold_state = inner.holding_state.lock().unwrap();
-
-                // There should be no hold state; create one.
-                debug_assert!(hold_state.is_none());
-                *hold_state = Some(HoldState {
-                    data: T::downgrade(event),
-                    gen,
-                    waiters_left: held,
-                    waker: Some(waker),
-                });
+            // If there are no listeners, return.
+            if state.head_and_tail.is_none() {
+                return Poll::Ready(());
             }
 
-            // Drop the lock and wake up a single waiter.
-            inner.holding_waiters.notify(1);
+            // If the waking is over, return.
+            if state.instance.is_none() {
+                return Poll::Ready(());
+            }
 
-            // Wait for the hold state to be consumed by waiters.
-            future::poll_fn(|cx| {
-                let mut hold_state = inner.holding_state.lock().unwrap();
-
-                if hold_state.is_none() {
-                    Poll::Ready(())
-                } else {
-                    hold_state.as_mut().unwrap().waker = Some(cx.waker().clone());
-                    Poll::Pending
+            // If we don't need to set the waker, stop right now.
+            if let Some(waker) = &state.waker {
+                if waker.will_wake(cx.waker()) {
+                    return Poll::Pending;
                 }
-            })
-            .await;
+            }
+
+            // Set the waker and return.
+            state.waker = Some(cx.waker().clone());
+            Poll::Pending
+        })
+        .await
+    }
+
+    async fn run_direct_listeners(
+        &self,
+        state: &mut Option<MutexGuard<'_, State<T>, TS>>,
+        event: &mut T::Unique<'_>,
+    ) -> bool {
+        /// Guard to restore direct listeners event a
+        struct RestoreDirects<'a, T: Event, TS: ThreadSafety> {
+            state: &'a Handler<T, TS>,
+            directs: Vec<DirectListener<T>>,
         }
+
+        impl<T: Event, TS: ThreadSafety> Drop for RestoreDirects<'_, T, TS> {
+            fn drop(&mut self) {
+                let mut directs = mem::take(&mut self.directs);
+                self.state
+                    .state()
+                    .lock()
+                    .unwrap()
+                    .directs
+                    .append(&mut directs);
+            }
+        }
+
+        // If there are not indirect listeners, skip this part entirely.
+        let state_ref = state.as_mut().unwrap();
+        if state_ref.directs.is_empty() {
+            return false;
+        }
+
+        // Take out the direct listeners.
+        let mut directs = RestoreDirects {
+            directs: mem::take(&mut state_ref.directs),
+            state: self,
+        };
+
+        // Make sure the mutex isn't locked while we call user code.
+        *state = None;
+
+        // Iterate over the direct listeners.
+        for direct in &mut directs.directs {
+            if direct(event).await {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Wait for the next event.
-    pub fn wait_once(&self) -> WaitOnce<T> {
-        WaitOnce {
-            inner: unsafe {
-                Pin::new_unchecked(Arc::clone(&ManuallyDrop::new(Arc::from_raw(self.inner()))))
-            },
-            listener: Listener::new(),
-        }
-    }
-
-    /// A stream over received events.
-    pub fn wait_many(&self) -> WaitMany<T> {
-        let inner = unsafe { &*self.inner() };
-
-        WaitMany {
-            recv: inner.broadcast.new_receiver(),
-        }
+    pub fn wait(&self) -> Waiter<'_, T, TS> {
+        Waiter::new(self)
     }
 
     /// Register an async closure be called when the event is received.
-    pub async fn wait_direct_async<
+    pub fn wait_direct_async<
         Fut: Future<Output = bool> + Send + 'static,
         F: FnMut(&mut T::Unique<'_>) -> Fut + Send + 'static,
     >(
         &self,
         mut f: F,
-    ) -> usize {
-        let inner = unsafe { &*self.inner() };
-        let mut direct = inner.direct.lock().await;
-
-        direct.insert(Box::new(move |u| Box::pin(f(u))))
+    ) {
+        let mut state = self.state().lock().unwrap();
+        state.directs.push(Box::new(move |u| Box::pin(f(u))))
     }
 
     /// Register a closure be called when the event is received.
-    pub async fn wait_direct(
-        &self,
-        mut f: impl FnMut(&mut T::Unique<'_>) -> bool + Send + 'static,
-    ) -> usize {
+    pub fn wait_direct(&self, mut f: impl FnMut(&mut T::Unique<'_>) -> bool + Send + 'static) {
         self.wait_direct_async(move |u| std::future::ready(f(u)))
-            .await
     }
 
-    /// Remove a direct listener.
-    pub async fn remove_direct(&self, id: usize) {
-        let inner = match self.try_inner() {
-            Some(inner) => inner,
-            None => return,
-        };
+    /// Get the inner state.
+    fn state(&self) -> &TS::Mutex<State<T>> {
+        self.state
+            .get_or_init(|| Box::new(TS::Mutex::new(State::new())))
+    }
+}
 
-        let mut direct = inner.direct.lock().await;
-        let _ = direct.remove(id);
+impl<T: Event, TS: ThreadSafety> Unpin for Handler<T, TS> {}
+
+impl<'a, T: Event, TS: ThreadSafety> IntoFuture for &'a Handler<T, TS> {
+    type IntoFuture = Waiter<'a, T, TS>;
+    type Output = T::Clonable;
+
+    fn into_future(self) -> Self::IntoFuture {
+        self.wait()
+    }
+}
+
+/// Waits for an event to be received.
+pub struct Waiter<'a, T: Event, TS: ThreadSafety> {
+    /// The event handler.
+    handler: &'a Handler<T, TS>,
+
+    /// The index of our listener.
+    index: usize,
+}
+
+impl<T: Event, TS: ThreadSafety> Unpin for Waiter<'_, T, TS> {}
+
+impl<'a, T: Event, TS: ThreadSafety> Waiter<'a, T, TS> {
+    /// Create a new waiter.
+    pub(crate) fn new(handler: &'a Handler<T, TS>) -> Self {
+        // Get the inner state.
+        let state = handler.state();
+
+        // Insert the listener.
+        let index = state.lock().unwrap().insert();
+        Self { handler, index }
     }
 
-    /// A guard that prevents the event handler from returning before it is processed.
-    pub fn wait_guard(&self) -> WaitGuard<'_, T> {
-        let inner = unsafe { &*self.inner() };
-
-        let gen = inner.holding_gen.load(Ordering::Acquire);
-        inner.holding.fetch_add(1, Ordering::AcqRel);
-
-        WaitGuard {
-            inner,
-            gen,
-            waiter: None,
-        }
-    }
-
-    /// Try to get a reference to the inner event.
-    ///
-    /// Returns `None` if we haven't been initialized yet.
-    fn try_inner(&self) -> Option<&Inner<T>> {
-        let ptr = self.inner.load(Ordering::Acquire);
-        unsafe { ptr.as_ref() }
-    }
-
-    /// Get a reference to the inner event, initializing it if necessary.
-    fn inner(&self) -> *const Inner<T> {
-        let mut ptr = self.inner.load(Ordering::Acquire);
-
-        if ptr.is_null() {
-            // Create a new inner event.
-            let (mut sender, _recv) = async_broadcast::broadcast(16);
-            sender.set_await_active(false);
-            sender.set_overflow(true);
-            let new = Arc::new(Inner::<T> {
-                broadcast: sender,
-                direct: AsyncMutex::new(Slab::new()),
-                holding: AtomicUsize::new(0),
-                holding_gen: AtomicU64::new(0),
-                holding_state: Mutex::new(None),
-                holding_waiters: event_listener::Event::new(),
-                _recv,
-                once: Mutex::new(Waiters::new()),
-            });
-
-            // Convert to a raw pointer.
-            let new_ptr = Arc::into_raw(new) as *mut Inner<T>;
-
-            // Try to swap it in.
-            ptr = self
-                .inner
-                .compare_exchange(ptr, new_ptr, Ordering::AcqRel, Ordering::Acquire)
-                .unwrap_or_else(|x| x);
-
-            if ptr.is_null() {
-                ptr = new_ptr;
-            } else {
-                unsafe {
-                    drop(Arc::from_raw(new_ptr));
-                }
+    fn notify_next(&mut self, mut state: MutexGuard<'_, State<T>, TS>) {
+        if let Some(next) = state.listeners[self.index].next.get() {
+            // Notify the next listener.
+            if let Some(waker) = state.notify(next) {
+                waker.wake();
+            }
+        } else {
+            // We're done with the chain, notify the top-level task.
+            state.instance = None;
+            if let Some(waker) = state.waker.take() {
+                waker.wake();
             }
         }
-
-        ptr as _
-    }
-}
-
-impl<T: Event> Unpin for Handler<T> {}
-
-impl<T: Event> Future for Handler<T> {
-    type Output = T::Clonable;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut &*self).poll(cx)
-    }
-}
-
-impl<T: Event> Future for &Handler<T> {
-    type Output = T::Clonable;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = *self.get_mut();
-        let inner = unsafe { &*this.inner() };
-
-        let mut table = inner.once.lock().unwrap();
-        unsafe { table.poll_internal(cx) }
-    }
-}
-
-pin_project_lite::pin_project! {
-    /// The future returned by [`Handler::wait_once`].
-    pub struct WaitOnce<T: Event> {
-        // Back-reference to the table.
-        inner: Pin<Arc<Inner<T>>>,
-
-        // Listener for the next event.
-        #[pin]
-        listener: Listener<T::Clonable>
     }
 
-    impl<T: Event> PinnedDrop for WaitOnce<T> {
-        fn drop(this: Pin<&mut Self>) {
-            let this = this.project();
-            let mut table = this.inner.once.lock().unwrap();
-            table.remove(this.listener);
+    /// Wait for a guard that prevents the event from moving on.
+    pub async fn hold(&mut self) -> HoldGuard<'_, 'a, T, TS> {
+        // Wait for the event.
+        let event = future::poll_fn(|cx| {
+            let mut state = self.handler.state().lock().unwrap();
+
+            // See if we are notified.
+            if state.take_notification(self.index) {
+                let event = match state.instance.clone() {
+                    Some(event) => event,
+                    None => return Poll::Pending,
+                };
+
+                // Return the event.
+                return Poll::Ready(event);
+            }
+
+            // Register the waker and sleep.
+            state.register_waker(self.index, cx.waker());
+            Poll::Pending
+        })
+        .await;
+
+        HoldGuard {
+            waiter: self,
+            event: Some(event),
         }
     }
 }
 
-impl<T: Event> Future for WaitOnce<T> {
+impl<T: Event, TS: ThreadSafety> Future for Waiter<'_, T, TS> {
     type Output = T::Clonable;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        let inner = this.inner.as_ref();
-        let mut table = inner.once.lock().unwrap();
-
-        // Insert into the table if we haven't already.
-        if this.listener.as_ref().is_empty() {
-            table.insert(this.listener.as_mut());
-        }
-
-        // Check for an event.
-        match table.register(this.listener.as_mut(), cx.waker()) {
-            RegisterResult::NoTask => panic!("polled future after completion"),
-            RegisterResult::Task => Poll::Pending,
-            RegisterResult::Notified(event) => Poll::Ready(event),
+        match self.poll_next(cx) {
+            Poll::Ready(Some(event)) => Poll::Ready(event),
+            Poll::Ready(None) => panic!("event handler was dropped"),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
 
-/// The stream returned by [`Handler::wait_many`].
-pub struct WaitMany<T: Event> {
-    recv: BroadcastReceiver<T::Clonable>,
-}
-
-impl<T: Event> Stream for WaitMany<T> {
+impl<T: Event, TS: ThreadSafety> Stream for Waiter<'_, T, TS> {
     type Item = T::Clonable;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.recv).poll_next(cx)
+        let mut state = self.handler.state.get().unwrap().lock().unwrap();
+
+        // See if we are notified.
+        if state.take_notification(self.index) {
+            let event = match state.instance.clone() {
+                Some(event) => event,
+                None => return Poll::Pending,
+            };
+
+            // Notify the next listener in the chain.
+            self.notify_next(state);
+
+            // Return the event.
+            return Poll::Ready(Some(event));
+        }
+
+        // Register the waker.
+        state.register_waker(self.index, cx.waker());
+
+        Poll::Pending
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (usize::MAX, None)
     }
 }
 
-/// A guard that prevents the event handler from returning before it is processed.
-pub struct WaitGuard<'a, T: Event> {
-    /// Back reference to the inner state.
-    inner: &'a Inner<T>,
-
-    /// The generation of the event we're waiting for.
-    gen: u64,
-
-    /// Waiter for a new event.
-    waiter: Option<event_listener::EventListener>,
-}
-
-impl<T: Event> Drop for WaitGuard<'_, T> {
+impl<'a, T: Event, TS: ThreadSafety> Drop for Waiter<'a, T, TS> {
     fn drop(&mut self) {
-        // Decrement the number of holders.
-        self.inner.holding.fetch_sub(1, Ordering::Release);
+        let mut state = self.handler.state().lock().unwrap();
 
-        // If we're not waiting, we're done.
-        if self.waiter.is_none() {
-            return;
-        }
+        // Remove the listener.
+        let listener = state.remove(self.index);
 
-        // If we're mid-waiter, make sure we aren't the last one.
-        let mut state_lock = self.inner.holding_state.lock().unwrap();
-        if let Some(ref mut state) = &mut *state_lock {
-            if state.gen != self.gen {
-                return;
-            }
-
-            // Decrement the count.
-            state.waiters_left -= 1;
-            if state.waiters_left == 0 {
-                // Wake up the top-level waiter.
-                if let Some(waker) = state.waker.take() {
-                    std::panic::catch_unwind(|| waker.wake()).ok();
-                }
-
-                *state_lock = None;
-            }
+        // Notify the next listener if we are notified.
+        if listener.notified.get() {
+            self.notify_next(state);
         }
     }
 }
 
-impl<'a, T: Event> WaitGuard<'a, T> {
-    /// Wait for the next event and returns a guard that prevents the event handler from returning
-    /// before it is processed.
-    pub async fn wait(&mut self) -> HeldGuard<'a, '_, T> {
-        loop {
-            {
-                // Try to acquire the lock.
-                let mut state_lock = self.inner.holding_state.lock().unwrap();
+/// A guard that notifies the next listener when dropped.
+pub struct HoldGuard<'waiter, 'handler, T: Event, TS: ThreadSafety> {
+    /// The waiter.
+    waiter: &'waiter mut Waiter<'handler, T, TS>,
 
-                // If we are waiting...
-                if let Some(ref mut state) = &mut *state_lock {
-                    // ...and if it's in our generation...
-                    if state.gen == self.gen {
-                        // Update our generation.
-                        self.gen = self.inner.holding_gen.load(Ordering::Acquire);
-
-                        // ...then we can hold the lock.
-                        return HeldGuard {
-                            inner: self.inner,
-                            data: state.data.clone(),
-                            _guard: self,
-                        };
-                    } else {
-                        // We probably got an event intended for another listener.
-                        self.inner.holding_waiters.notify(1);
-
-                        // Update our generation.
-                        self.gen = self.inner.holding_gen.load(Ordering::Acquire);
-                    }
-                }
-            }
-
-            // Begin waiting.
-            match self.waiter.take() {
-                Some(listener) => listener.await,
-
-                None => {
-                    // Register and try again.
-                    self.waiter = Some(self.inner.holding_waiters.listen());
-                }
-            }
-        }
-    }
+    /// The event we just received.
+    event: Option<T::Clonable>,
 }
 
-/// A guard that prevents the event handler from returning before it is processed.
-pub struct HeldGuard<'a, 'b, T: Event> {
-    /// Inner state.
-    inner: &'a Inner<T>,
-
-    /// The data type.
-    data: T::Clonable,
-
-    /// Back reference to the guard.
-    _guard: &'b mut WaitGuard<'a, T>,
-}
-
-impl<T: Event> ops::Deref for HeldGuard<'_, '_, T> {
+impl<T: Event, TS: ThreadSafety> Deref for HoldGuard<'_, '_, T, TS> {
     type Target = T::Clonable;
 
-    #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.data
+        self.event.as_ref().unwrap()
     }
 }
 
-impl<T: Event> ops::DerefMut for HeldGuard<'_, '_, T> {
-    #[inline]
+impl<T: Event, TS: ThreadSafety> DerefMut for HoldGuard<'_, '_, T, TS> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
+        self.event.as_mut().unwrap()
     }
 }
 
-impl<T: Event> Drop for HeldGuard<'_, '_, T> {
+impl<T: Event, TS: ThreadSafety> HoldGuard<'_, '_, T, TS> {
+    /// Get the event.
+    pub fn into_inner(mut self) -> T::Clonable {
+        self.event.take().unwrap()
+    }
+}
+
+impl<T: Event, TS: ThreadSafety> Drop for HoldGuard<'_, '_, T, TS> {
     fn drop(&mut self) {
-        // Decrement the number of holders.
-        let mut state_lock = self.inner.holding_state.lock().unwrap();
-        let state = state_lock.as_mut().unwrap();
+        // Tell the waiter to notify the next listener.
+        self.waiter
+            .notify_next(self.waiter.handler.state().lock().unwrap());
+    }
+}
 
-        state.waiters_left -= 1;
-
-        // If we're out of waiters, we're done.
-        if state.waiters_left == 0 {
-            // Wake up the top-level waiter.
-            if let Some(waker) = state.waker.take() {
-                std::panic::catch_unwind(|| waker.wake()).ok();
-            }
-
-            *state_lock = None;
-        } else {
-            // Otherwise, wake up the next waiter.
-            drop(state_lock);
-            self.inner.holding_waiters.notify(1);
+impl<T: Event> State<T> {
+    /// Get a fresh state instance.
+    fn new() -> Self {
+        Self {
+            listeners: Slab::new(),
+            directs: Vec::new(),
+            head_and_tail: None,
+            waker: None,
+            instance: None,
         }
     }
+
+    /// Insert a new listener into the list.
+    fn insert(&mut self) -> usize {
+        // Create the listener.
+        let listener = Listener {
+            next: Cell::new(None),
+            prev: Cell::new(self.head_and_tail.map(|(_, tail)| tail)),
+            waker: Cell::new(None),
+            notified: Cell::new(false),
+        };
+
+        // Insert the listener into the list.
+        let index = self.listeners.insert(listener);
+
+        // Update the head and tail.
+        match &mut self.head_and_tail {
+            Some((_head, tail)) => {
+                self.listeners[*tail].next.set(Some(index));
+                *tail = index;
+            }
+
+            None => {
+                self.head_and_tail = Some((index, index));
+            }
+        }
+
+        index
+    }
+
+    /// Remove a listener from the list.
+    fn remove(&mut self, index: usize) -> Listener {
+        // Get the listener.
+        let listener = self.listeners.remove(index);
+
+        // Update the head and tail.
+        match &mut self.head_and_tail {
+            Some((head, tail)) => {
+                if *head == index && *tail == index {
+                    self.head_and_tail = None;
+                } else if *head == index {
+                    self.head_and_tail = Some((listener.next.get().unwrap(), *tail));
+                } else if *tail == index {
+                    self.head_and_tail = Some((*head, listener.prev.get().unwrap()));
+                }
+            }
+
+            None => panic!("invalid listener list: head and tail are both None"),
+        }
+
+        // Update the next and previous listeners.
+        if let Some(next) = listener.next.get() {
+            self.listeners[next].prev.set(listener.prev.get());
+        }
+
+        if let Some(prev) = listener.prev.get() {
+            self.listeners[prev].next.set(listener.next.get());
+        }
+
+        listener
+    }
+
+    /// Take out the notification.
+    fn take_notification(&mut self, index: usize) -> bool {
+        self.listeners[index].notified.replace(false)
+    }
+
+    /// Register a waker.
+    fn register_waker(&mut self, index: usize, waker: &Waker) {
+        let listener = &mut self.listeners[index];
+
+        // If the listener's waker is the same as ours, no need to clone.
+        let current_waker = listener.waker.take();
+        match current_waker {
+            Some(current_waker) if current_waker.will_wake(waker) => {
+                listener.waker.replace(Some(current_waker));
+            }
+            _ => {
+                listener.waker.replace(Some(waker.clone()));
+            }
+        }
+    }
+
+    /// Notify the listener.
+    fn notify(&mut self, index: usize) -> Option<Waker> {
+        // If the listener is already notified, return.
+        if self.listeners[index].notified.replace(true) {
+            return None;
+        }
+
+        // Return the waker.
+        self.listeners[index].waker.replace(None)
+    }
+}
+
+/// A registered listener in the event handler.
+struct Listener {
+    /// The next listener in the list.
+    next: Cell<Option<usize>>,
+
+    /// The previous listener in the list.
+    prev: Cell<Option<usize>>,
+
+    /// The waker for the listener.
+    waker: Cell<Option<Waker>>,
+
+    /// Whether or not this listener is notified.
+    notified: Cell<bool>,
 }
 
 /// The type of event that can be sent over a [`Handler`].
-///
-/// This type is sealed and cannot be implemented outside of this crate.
 pub trait Event {
     type Clonable: Clone + 'static;
     type Unique<'a>: 'a;
@@ -545,5 +534,13 @@ impl<T: Clone + 'static> Event for T {
 
     fn downgrade(unique: &mut Self::Unique<'_>) -> Self::Clonable {
         unique.clone()
+    }
+}
+
+struct CallOnDrop<F: FnMut()>(F);
+
+impl<F: FnMut()> Drop for CallOnDrop<F> {
+    fn drop(&mut self) {
+        (self.0)();
     }
 }
