@@ -49,4 +49,5 @@ pub use handler::{Event, Handler, Waiter};
 pub use sync::{DefaultThreadSafety, ThreadSafety, ThreadUnsafe};
 pub use timer::Timer;
 
+#[cfg(feature = "thread_safe")]
 pub use sync::ThreadSafe;

@@ -32,10 +32,16 @@ pub(crate) mod prelude {
     pub use super::__private::{Atomic, Mutex, OnceLock};
 }
 
+#[cfg(feature = "thread_safe")]
 pub use thread_safe::ThreadSafe;
 
+#[cfg(feature = "thread_safe")]
+type _DefaultTS = ThreadSafe;
+#[cfg(not(feature = "thread_safe"))]
+type _DefaultTS = ThreadUnsafe;
+
 /// The default thread safe type to use.
-pub type DefaultThreadSafety = ThreadSafe;
+pub type DefaultThreadSafety = _DefaultTS;
 
 /// A token that can be used to indicate whether the current implementation should be thread-safe or
 /// not.
@@ -250,6 +256,7 @@ impl<T> __private::Rc<T> for std::rc::Rc<T> {
     }
 }
 
+#[cfg(feature = "thread_safe")]
 pub(crate) mod thread_safe {
     use super::*;
 
