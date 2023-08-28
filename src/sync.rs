@@ -21,12 +21,15 @@ pub(crate) use __private::__ThreadSafety;
 
 use core::cell::{Cell, RefCell, RefMut};
 use core::convert::Infallible;
+use core::future::Future;
 use core::ops::Add;
 
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::atomic;
 use std::thread;
+
+use unsend::channel as us_channel;
 
 pub(crate) mod prelude {
     pub use super::__private::{Atomic, Mutex, OnceLock};
@@ -62,18 +65,16 @@ impl __ThreadSafety for ThreadUnsafe {
     type AtomicU64 = Cell<u64>;
     type AtomicI64 = Cell<i64>;
 
-    type Receiver<T> = Rc<RefCell<VecDeque<T>>>;
-    type Sender<T> = Rc<RefCell<VecDeque<T>>>;
+    type Receiver<T> = us_channel::Receiver<T>;
+    type Sender<T> = us_channel::Sender<T>;
     type Rc<T> = Rc<T>;
 
     type ConcurrentQueue<T> = RefCell<VecDeque<T>>;
     type Mutex<T> = RefCell<T>;
     type OnceLock<T> = once_cell::unsync::OnceCell<T>;
 
-    fn channel_bounded<T>(capacity: usize) -> (Self::Sender<T>, Self::Receiver<T>) {
-        let queue = Rc::new(RefCell::new(VecDeque::with_capacity(capacity)));
-
-        (queue.clone(), queue)
+    fn channel_bounded<T>(_capacity: usize) -> (Self::Sender<T>, Self::Receiver<T>) {
+        us_channel::channel()
     }
 
     fn get_reactor() -> Self::Rc<Reactor<Self>> {
@@ -149,27 +150,39 @@ impl<T: Copy> __private::Atomic<T> for Cell<T> {
     }
 }
 
-impl<T> __private::Sender<T> for Rc<RefCell<VecDeque<T>>> {
+impl<T> __private::Sender<T> for us_channel::Sender<T> {
     type Error = Infallible;
     type Send<'a> = core::future::Ready<Result<(), Self::Error>> where Self: 'a;
 
     fn send(&self, value: T) -> Self::Send<'_> {
-        self.borrow_mut().push_back(value);
+        self.send(value).ok();
         core::future::ready(Ok(()))
+    }
+
+    fn try_send(&self, value: T) -> Result<(), Self::Error> {
+        self.send(value).ok();
+        Ok(())
     }
 }
 
-impl<T> __private::Receiver<T> for Rc<RefCell<VecDeque<T>>> {
+impl<T> __private::Receiver<T> for us_channel::Receiver<T> {
+    type Error = ();
+    type Recv<'a> = std::pin::Pin<Box<dyn Future<Output = Result<T, Self::Error>> + 'a>> where Self: 'a;
+
+    fn recv(&self) -> Self::Recv<'_> {
+        Box::pin(async move { self.recv().await.map_err(|_| ()) })
+    }
+
     fn capacity(&self) -> usize {
         usize::MAX
     }
 
     fn try_recv(&self) -> Option<T> {
-        self.borrow_mut().pop_front()
+        self.try_recv().ok()
     }
 
     fn len(&self) -> usize {
-        self.borrow().len()
+        todo!()
     }
 }
 
@@ -363,9 +376,20 @@ pub(crate) mod thread_safe {
         fn send(&self, value: T) -> Self::Send<'_> {
             self.send(value)
         }
+
+        fn try_send(&self, value: T) -> Result<(), Self::Error> {
+            self.try_send(value).map_err(|_e| todo!())
+        }
     }
 
     impl<T> __private::Receiver<T> for async_channel::Receiver<T> {
+        type Error = async_channel::RecvError;
+        type Recv<'a> = async_channel::Recv<'a, T> where Self: 'a;
+
+        fn recv(&self) -> Self::Recv<'_> {
+            self.recv()
+        }
+
         fn capacity(&self) -> usize {
             self.capacity().unwrap()
         }
@@ -489,10 +513,17 @@ pub(crate) mod __private {
         where
             Self: 'a;
         fn send(&self, value: T) -> Self::Send<'_>;
+        fn try_send(&self, value: T) -> Result<(), Self::Error>;
     }
 
     #[doc(hidden)]
     pub trait Receiver<T> {
+        type Error: std::fmt::Debug;
+        type Recv<'a>: Future<Output = Result<T, Self::Error>> + 'a
+        where
+            Self: 'a;
+
+        fn recv(&self) -> Self::Recv<'_>;
         fn capacity(&self) -> usize;
         fn try_recv(&self) -> Option<T>;
         fn len(&self) -> usize;

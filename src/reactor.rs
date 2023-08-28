@@ -304,14 +304,14 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         builder: Box<WindowBuilder>,
 
         /// The window has been built.
-        waker: Complete<Result<winit::window::Window, OsError>>,
+        waker: Complete<Result<winit::window::Window, OsError>, TS>,
     },
 
     /// Get the primary monitor.
-    PrimaryMonitor(Complete<Option<MonitorHandle>>),
+    PrimaryMonitor(Complete<Option<MonitorHandle>, TS>),
 
     /// Get the list of monitors.
-    AvailableMonitors(Complete<Vec<MonitorHandle>>),
+    AvailableMonitors(Complete<Vec<MonitorHandle>, TS>),
 
     /// Set the device filter.
     SetDeviceFilter {
@@ -319,7 +319,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         filter: DeviceEventFilter,
 
         /// The device filter has been set.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the inner position of the window.
@@ -328,7 +328,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>>,
+        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>, TS>,
     },
 
     /// Get the outer position of the window.
@@ -337,7 +337,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>>,
+        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>, TS>,
     },
 
     /// Set the outer position.
@@ -349,7 +349,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         position: Position,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the inner size.
@@ -358,7 +358,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<PhysicalSize<u32>>,
+        waker: Complete<PhysicalSize<u32>, TS>,
     },
 
     /// Set the inner size.
@@ -370,7 +370,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         size: Size,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the outer size.
@@ -379,7 +379,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<PhysicalSize<u32>>,
+        waker: Complete<PhysicalSize<u32>, TS>,
     },
 
     /// Set the minimum inner size.
@@ -391,7 +391,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         size: Option<Size>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the maximum inner size.
@@ -403,7 +403,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         size: Option<Size>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the resize increments.
@@ -412,7 +412,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<PhysicalSize<u32>>>,
+        waker: Complete<Option<PhysicalSize<u32>>, TS>,
     },
 
     /// Set the resize increments.
@@ -424,7 +424,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         size: Option<Size>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the title.
@@ -436,7 +436,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         title: String,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set whether the window is transparent.
@@ -448,7 +448,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         transparent: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set whether or not the window is resizable.
@@ -460,7 +460,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         resizable: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set whether the window is visible.
@@ -472,7 +472,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         visible: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is resizable.
@@ -481,7 +481,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<bool>,
+        waker: Complete<bool, TS>,
     },
 
     /// Get whether the window is visible.
@@ -490,7 +490,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<bool>>,
+        waker: Complete<Option<bool>, TS>,
     },
 
     /// Set whether the window is minimized.
@@ -502,7 +502,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         minimized: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is minimized.
@@ -511,7 +511,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<bool>>,
+        waker: Complete<Option<bool>, TS>,
     },
 
     /// Set whether the window is maximized.
@@ -523,7 +523,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         maximized: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is maximized.
@@ -532,7 +532,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<bool>,
+        waker: Complete<bool, TS>,
     },
 
     /// Set whether the window is fullscreen.
@@ -544,7 +544,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         fullscreen: Option<Fullscreen>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is fullscreen.
@@ -553,7 +553,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<Fullscreen>>,
+        waker: Complete<Option<Fullscreen>, TS>,
     },
 
     /// Set whether the window is decorated.
@@ -565,7 +565,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         decorated: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is decorated.
@@ -574,7 +574,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<bool>,
+        waker: Complete<bool, TS>,
     },
 
     /// Set the window level.
@@ -586,7 +586,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         level: WindowLevel,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the window icon.
@@ -598,7 +598,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         icon: Option<Icon>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the IME position.
@@ -610,7 +610,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         position: Position,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set whether IME is allowed.
@@ -622,7 +622,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         allowed: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the IME purpose.
@@ -634,7 +634,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         purpose: ImePurpose,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Focus the window.
@@ -643,7 +643,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Tell whether or not the window is focused.
@@ -652,7 +652,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<bool>,
+        waker: Complete<bool, TS>,
     },
 
     /// Request user attention.
@@ -664,7 +664,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         request_type: Option<UserAttentionType>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the theme of the window.
@@ -676,7 +676,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         theme: Option<Theme>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the theme of the window.
@@ -685,7 +685,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<Theme>>,
+        waker: Complete<Option<Theme>, TS>,
     },
 
     /// Set whether the content is protected.
@@ -697,7 +697,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         protected: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the title.
@@ -706,7 +706,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<String>,
+        waker: Complete<String, TS>,
     },
 
     /// Set the cursor icon.
@@ -718,7 +718,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         icon: CursorIcon,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the cursor position.
@@ -730,7 +730,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         position: Position,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Set the cursor grab.
@@ -742,7 +742,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         mode: CursorGrabMode,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Set whether the cursor is visible.
@@ -754,7 +754,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         visible: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Drag the window.
@@ -763,7 +763,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Drag-resize the window.
@@ -774,7 +774,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         direction: ResizeDirection,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Set the cursor hit test.
@@ -786,7 +786,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         hit_test: bool,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Get the current monitor.
@@ -795,7 +795,7 @@ pub(crate) enum EventLoopOp<TS: ThreadSafety> {
         window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<MonitorHandle>>,
+        waker: Complete<Option<MonitorHandle>, TS>,
     },
 }
 
