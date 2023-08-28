@@ -39,6 +39,12 @@ jobs:
           - { target: x86_64-apple-darwin,      os: macos-latest,    }
           - { target: x86_64-apple-ios,         os: macos-latest,    }
           - { target: aarch64-apple-ios,        os: macos-latest,    }
+        exclude:
+          - rust_version: 1.65.0
+            platform: { target: aarch64-linux-android,    os: ubuntu-latest, cmd: 'apk --', features: "android-native-activity" }
+        include:
+          - rust_version: 1.69.0
+            platform: { target: aarch64-linux-android,    os: ubuntu-latest, cmd: 'apk --', features: "android-native-activity" }
 
     env:
       RUST_BACKTRACE: 1

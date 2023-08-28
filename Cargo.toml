@@ -24,6 +24,7 @@ winit = { version = "0.28.3", default-features = false }
 cfg_aliases = "0.1.1"
 
 [dev-dependencies]
+async-channel = "1.8.0"
 futures-lite = { version = "1.13.0", features = ["std"], default-features = false }
 softbuffer = { version = "0.2.0", default-features = false, features = ["x11"] }
 winit = { version = "0.28.3", default-features = false, features = ["x11"] }

@@ -78,7 +78,7 @@ fn main2(evl: EventLoop<ThreadUnsafe>) {
             let print_size = async {
                 window
                     .resized()
-                    .wait_many()
+                    .wait()
                     .for_each(|size| {
                         println!("{:?}", size);
                     })
@@ -89,14 +89,14 @@ fn main2(evl: EventLoop<ThreadUnsafe>) {
 
             // Wait until the window is closed.
             let close = async {
-                window.close_requested().wait_once().await;
+                window.close_requested().wait().await;
                 println!("Close");
                 true
             };
 
             // Wait until the application is suspended.
             let suspend = async {
-                window_target.suspended().wait_once().await;
+                window_target.suspended().wait().await;
                 false
             };
 
