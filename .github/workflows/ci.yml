@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust_version: ['1.65.0', stable, nightly]
+        rust_version: ['1.67.1', stable, nightly]
         platform:
           # Note: Make sure that we test all the `docs.rs` targets defined in Cargo.toml!
           - { target: x86_64-pc-windows-msvc,   os: windows-latest,  }
@@ -40,7 +40,7 @@ jobs:
           - { target: x86_64-apple-ios,         os: macos-latest,    }
           - { target: aarch64-apple-ios,        os: macos-latest,    }
         exclude:
-          - rust_version: 1.65.0
+          - rust_version: 1.67.1
             platform: { target: aarch64-linux-android,    os: ubuntu-latest, cmd: 'apk --', features: "android-native-activity" }
         include:
           - rust_version: 1.69.0
