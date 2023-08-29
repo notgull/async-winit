@@ -74,9 +74,19 @@ jobs:
     - name: Install GCC Multilib
       if: (matrix.platform.os == 'ubuntu-latest') && contains(matrix.platform.target, 'i686')
       run: sudo apt-get update && sudo apt-get install gcc-multilib
-    - name: Install cargo-apk
+
+    - name: Cache cargo-apk
       if: contains(matrix.platform.target, 'android')
-      run: cargo install cargo-apk
+      id: cargo-apk-cache
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/bin/cargo-apk
+        # Change this key if we update the required cargo-apk version
+        key: cargo-apk-${{ matrix.rust_version }}-${{ matrix.platform.name }}-v0-9-7
+
+    - name: Install cargo-apk
+      if: contains(matrix.platform.target, 'android') && (steps.cargo-apk-cache.outputs.cache-hit != 'true')
+      run: cargo install cargo-apk --version=^0.9.7 --locked
 
     - name: Check documentation
       shell: bash
