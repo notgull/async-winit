@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust_version: ['1.65.0', stable, nightly]
+        rust_version: ['1.67.1', stable, nightly]
         platform:
           # Note: Make sure that we test all the `docs.rs` targets defined in Cargo.toml!
           - { target: x86_64-pc-windows-msvc,   os: windows-latest,  }
@@ -39,6 +39,12 @@ jobs:
           - { target: x86_64-apple-darwin,      os: macos-latest,    }
           - { target: x86_64-apple-ios,         os: macos-latest,    }
           - { target: aarch64-apple-ios,        os: macos-latest,    }
+        exclude:
+          - rust_version: 1.67.1
+            platform: { target: aarch64-linux-android,    os: ubuntu-latest, cmd: 'apk --', features: "android-native-activity" }
+        include:
+          - rust_version: 1.69.0
+            platform: { target: aarch64-linux-android,    os: ubuntu-latest, cmd: 'apk --', features: "android-native-activity" }
 
     env:
       RUST_BACKTRACE: 1
@@ -68,9 +74,19 @@ jobs:
     - name: Install GCC Multilib
       if: (matrix.platform.os == 'ubuntu-latest') && contains(matrix.platform.target, 'i686')
       run: sudo apt-get update && sudo apt-get install gcc-multilib
-    - name: Install cargo-apk
+
+    - name: Cache cargo-apk
       if: contains(matrix.platform.target, 'android')
-      run: cargo install cargo-apk
+      id: cargo-apk-cache
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/bin/cargo-apk
+        # Change this key if we update the required cargo-apk version
+        key: cargo-apk-${{ matrix.rust_version }}-${{ matrix.platform.name }}-v0-9-7
+
+    - name: Install cargo-apk
+      if: contains(matrix.platform.target, 'android') && (steps.cargo-apk-cache.outputs.cache-hit != 'true')
+      run: cargo install cargo-apk --version=^0.9.7 --locked
 
     - name: Check documentation
       shell: bash
@@ -99,7 +115,9 @@ jobs:
         !contains(matrix.platform.target, 'redox') &&
         !contains(matrix.platform.target, 'android') &&
         matrix.rust_version != '1.64.0'
-      run: cargo $CMD test --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+      run: |
+        cargo $CMD test --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+        cargo $CMD test --verbose --target ${{ matrix.platform.target }} $OPTIONS --features "$FEATURES,thread_safe"
 
     - name: Lint with clippy
       shell: bash

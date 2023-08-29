@@ -17,11 +17,12 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 */
 
 // This file is partially derived from `async-io`, which was originally created by Stjepan Glavina
-// and contributers. It was originally released under the MIT license and Apache 2.0 license.
+// and contributors. It was originally released under the MIT license and Apache 2.0 license.
 
 //! Asynchronous timers.
 
 use crate::reactor::Reactor;
+use crate::sync::ThreadSafety;
 
 use std::fmt;
 use std::future::Future;
@@ -41,9 +42,9 @@ use futures_lite::stream::Stream;
 ///
 /// [`ControlFlow::WaitUntil`]: crate::event_loop::ControlFlow::WaitUntil
 /// [`Timer`]: https://docs.rs/async-io/latest/async_io/timer/struct.Timer.html
-pub struct Timer {
+pub struct Timer<TS: ThreadSafety = crate::DefaultThreadSafety> {
     /// Static reference to the reactor.
-    reactor: &'static Reactor,
+    reactor: TS::Rc<Reactor<TS>>,
 
     /// This timer's ID and the last waker that polled it.
     id_and_waker: Option<(usize, Waker)>,
@@ -55,7 +56,7 @@ pub struct Timer {
     period: Duration,
 }
 
-impl fmt::Debug for Timer {
+impl<TS: ThreadSafety> fmt::Debug for Timer<TS> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Timer")
             .field("deadline", &self.deadline)
@@ -65,13 +66,13 @@ impl fmt::Debug for Timer {
     }
 }
 
-impl Unpin for Timer {}
+impl<TS: ThreadSafety> Unpin for Timer<TS> {}
 
-impl Timer {
+impl<TS: ThreadSafety> Timer<TS> {
     /// Create a new timer that will never fire.
     pub fn never() -> Self {
         Self {
-            reactor: Reactor::get(),
+            reactor: Reactor::<TS>::get(),
             id_and_waker: None,
             deadline: None,
             period: Duration::MAX,
@@ -105,7 +106,7 @@ impl Timer {
     /// Create a timer that fires on an interval starting at the given time.
     pub fn interval_at(start: Instant, period: Duration) -> Self {
         Self {
-            reactor: Reactor::get(),
+            reactor: Reactor::<TS>::get(),
             id_and_waker: None,
             deadline: Some(start),
             period,
@@ -159,13 +160,13 @@ impl Timer {
     }
 }
 
-impl Drop for Timer {
+impl<TS: ThreadSafety> Drop for Timer<TS> {
     fn drop(&mut self) {
         self.clear();
     }
 }
 
-impl Future for Timer {
+impl<TS: ThreadSafety> Future for Timer<TS> {
     type Output = Instant;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -173,7 +174,7 @@ impl Future for Timer {
     }
 }
 
-impl Stream for Timer {
+impl<TS: ThreadSafety> Stream for Timer<TS> {
     type Item = Instant;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {

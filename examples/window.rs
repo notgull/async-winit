@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use async_winit::event_loop::{EventLoop, EventLoopBuilder};
 use async_winit::window::Window;
-use async_winit::Timer;
+use async_winit::{DefaultThreadSafety, Timer};
 
 use futures_lite::prelude::*;
 use softbuffer::GraphicsContext;
@@ -38,18 +38,18 @@ fn main2(evl: EventLoop) {
         target.resumed().await;
 
         // Create a window.
-        let window = Window::new().await.unwrap();
+        let window = Window::<DefaultThreadSafety>::new().await.unwrap();
 
         // Print resize events.
         let print_resize = {
-            window.resized().wait_many().for_each(|new_size| {
+            window.resized().wait().for_each(|new_size| {
                 println!("Window resized to {:?}", new_size);
             })
         };
 
         // Print the position every second.
         let print_position = {
-            Timer::interval(Duration::from_secs(1))
+            Timer::<DefaultThreadSafety>::interval(Duration::from_secs(1))
                 .then(|_| window.inner_position())
                 .for_each(|posn| {
                     println!("Window position: {:?}", posn);
@@ -63,10 +63,10 @@ fn main2(evl: EventLoop) {
             let mut buf = vec![];
 
             async move {
-                let mut waiter = window.redraw_requested().wait_guard();
+                let mut waiter = window.redraw_requested().wait();
 
                 loop {
-                    let _guard = waiter.wait().await;
+                    let _guard = waiter.hold().await;
                     let inner_size = window.inner_size().await;
 
                     // Get the softbuffer.
@@ -92,9 +92,7 @@ fn main2(evl: EventLoop) {
         };
 
         // Wait for the window to close.
-        window
-            .close_requested()
-            .wait_once()
+        async { window.close_requested().wait().await }
             .or(print_resize)
             .or(print_position)
             .or(draw)

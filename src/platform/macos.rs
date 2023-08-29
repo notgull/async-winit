@@ -31,6 +31,7 @@ use std::os::raw::c_void;
 use super::__private as sealed;
 use crate::event_loop::EventLoopBuilder;
 use crate::window::{Window, WindowBuilder};
+use crate::ThreadSafety;
 
 /// Additional methods on [`Window`] that are specific to MacOS.
 ///
@@ -95,7 +96,7 @@ pub trait WindowExtMacOS: sealed::WindowPrivate {
     fn option_as_alt(&self) -> OptionAsAlt;
 }
 
-impl WindowExtMacOS for Window {
+impl<TS: ThreadSafety> WindowExtMacOS for Window<TS> {
     fn ns_view(&self) -> *mut c_void {
         self.window().ns_view()
     }

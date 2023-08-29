@@ -20,6 +20,7 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 
 use crate::dpi::PhysicalSize;
 use crate::handler::Handler;
+use crate::sync::ThreadSafety;
 use crate::Event;
 
 use winit::dpi::PhysicalPosition;
@@ -109,81 +110,81 @@ impl Event for ScaleFactor {
     }
 }
 
-pub(crate) struct Registration {
+pub(crate) struct Registration<TS: ThreadSafety> {
     /// `RedrawRequested`
-    pub(crate) redraw_requested: Handler<()>,
+    pub(crate) redraw_requested: Handler<(), TS>,
 
     /// `Event::CloseRequested`.
-    pub(crate) close_requested: Handler<()>,
+    pub(crate) close_requested: Handler<(), TS>,
 
     /// `Event::Resized`.
-    pub(crate) resized: Handler<PhysicalSize<u32>>,
+    pub(crate) resized: Handler<PhysicalSize<u32>, TS>,
 
     /// `Event::Moved`.
-    pub(crate) moved: Handler<PhysicalPosition<i32>>,
+    pub(crate) moved: Handler<PhysicalPosition<i32>, TS>,
 
     /// `Event::Destroyed`.
-    pub(crate) destroyed: Handler<()>,
+    pub(crate) destroyed: Handler<(), TS>,
 
     /// `Event::Focused`.
-    pub(crate) focused: Handler<bool>,
+    pub(crate) focused: Handler<bool, TS>,
 
     /// `Event::ReceivedCharacter`.
-    pub(crate) received_character: Handler<char>,
+    pub(crate) received_character: Handler<char, TS>,
 
     /// `Event::KeyboardInput`.
-    pub(crate) keyboard_input: Handler<KeyboardInput>,
+    pub(crate) keyboard_input: Handler<KeyboardInput, TS>,
 
     /// `Event::ModifiersState`
-    pub(crate) modifiers_changed: Handler<ModifiersState>,
+    pub(crate) modifiers_changed: Handler<ModifiersState, TS>,
 
     /// `Event::Ime`
-    pub(crate) ime: Handler<Ime>,
+    pub(crate) ime: Handler<Ime, TS>,
 
     /// `Event::CursorMoved`
-    pub(crate) cursor_moved: Handler<CursorMoved>,
+    pub(crate) cursor_moved: Handler<CursorMoved, TS>,
 
     /// `Event::CursorEntered`
-    pub(crate) cursor_entered: Handler<DeviceId>,
+    pub(crate) cursor_entered: Handler<DeviceId, TS>,
 
     /// `Event::CursorLeft`
-    pub(crate) cursor_left: Handler<DeviceId>,
+    pub(crate) cursor_left: Handler<DeviceId, TS>,
 
     /// `Event::MouseWheel`
-    pub(crate) mouse_wheel: Handler<MouseWheel>,
+    pub(crate) mouse_wheel: Handler<MouseWheel, TS>,
 
     /// `Event::MouseInput`
-    pub(crate) mouse_input: Handler<MouseInput>,
+    pub(crate) mouse_input: Handler<MouseInput, TS>,
 
     /// `Event::TouchpadMagnify`
-    pub(crate) touchpad_magnify: Handler<TouchpadMagnify>,
+    pub(crate) touchpad_magnify: Handler<TouchpadMagnify, TS>,
 
     /// `Event::SmartMagnify`.
-    pub(crate) smart_magnify: Handler<DeviceId>,
+    pub(crate) smart_magnify: Handler<DeviceId, TS>,
 
     /// `Event::TouchpadRotate`
-    pub(crate) touchpad_rotate: Handler<TouchpadRotate>,
+    pub(crate) touchpad_rotate: Handler<TouchpadRotate, TS>,
 
     /// `Event::TouchpadPressure`
-    pub(crate) touchpad_pressure: Handler<TouchpadPressure>,
+    pub(crate) touchpad_pressure: Handler<TouchpadPressure, TS>,
 
     /// `Event::AxisMotion`
-    pub(crate) axis_motion: Handler<AxisMotion>,
+    pub(crate) axis_motion: Handler<AxisMotion, TS>,
 
     /// `Event::Touch`
-    pub(crate) touch: Handler<Touch>,
+    pub(crate) touch: Handler<Touch, TS>,
 
     /// `Event::ScaleFactorChanged`
-    pub(crate) scale_factor_changed: Handler<ScaleFactor>,
+    pub(crate) scale_factor_changed: Handler<ScaleFactor, TS>,
 
     /// `Event::ThemeChanged`
-    pub(crate) theme_changed: Handler<Theme>,
+    pub(crate) theme_changed: Handler<Theme, TS>,
 
     /// `Event::Occluded`
-    pub(crate) occluded: Handler<bool>,
+    pub(crate) occluded: Handler<bool, TS>,
 }
 
-impl Registration {
+impl<TS: ThreadSafety> Registration<TS> {
     pub(crate) fn new() -> Self {
         Self {
             close_requested: Handler::new(),

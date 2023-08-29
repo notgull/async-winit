@@ -87,11 +87,27 @@ mod __private {
         )*}
     }
 
+    macro_rules! sealed_trait_with_gen {
+        ($($name: ident $tname: ident)*) => {$(
+            #[doc(hidden)]
+            pub trait $tname {
+                fn __sealed_marker(i: Internal);
+            }
+
+            impl<TS: crate::sync::ThreadSafety> $tname for $name<TS> {
+                fn __sealed_marker(_: Internal) {}
+            }
+        )*}
+    }
+
     sealed_trait! {
+        EventLoopBuilder EventLoopBuilderPrivate
+        WindowBuilder WindowBuilderPrivate
+    }
+
+    sealed_trait_with_gen! {
         EventLoopWindowTarget EventLoopWindowTargetPrivate
         EventLoop EventLoopPrivate
-        EventLoopBuilder EventLoopBuilderPrivate
         Window WindowPrivate
-        WindowBuilder WindowBuilderPrivate
     }
 }

@@ -28,12 +28,13 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 //!
 //! ```no_run
 //! use async_winit::event_loop::EventLoop;
+//! use async_winit::ThreadUnsafe;
 //!
 //! struct MyCustomType;
 //!
 //! let (sender, receiver) = async_channel::unbounded();
 //!
-//! EventLoop::new().block_on(async move {
+//! EventLoop::<ThreadUnsafe>::new().block_on(async move {
 //!     // Wait for a message from the channel.
 //!     let message = receiver.recv().await.unwrap();
 //! #   futures_lite::future::pending().await
@@ -47,9 +48,10 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 //!
 //! [`Handler`]: crate::Handler
 
-use crate::filter::ReturnOrFinish;
 use crate::handler::Handler;
 use crate::reactor::{EventLoopOp, Reactor};
+use crate::sync::ThreadSafety;
+use crate::DefaultThreadSafety;
 
 use std::convert::Infallible;
 use std::fmt;
@@ -89,15 +91,15 @@ pub struct Wakeup {
 /// thread to be used.
 ///
 /// [`Window`]: crate::window::Window
-pub struct EventLoop {
+pub struct EventLoop<TS: ThreadSafety = DefaultThreadSafety> {
     /// The underlying event loop.
     pub(crate) inner: winit::event_loop::EventLoop<Wakeup>,
 
     /// The window target.
-    window_target: EventLoopWindowTarget,
+    window_target: EventLoopWindowTarget<TS>,
 }
 
-impl fmt::Debug for EventLoop {
+impl<TS: ThreadSafety> fmt::Debug for EventLoop<TS> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("EventLoop { .. }")
     }
@@ -109,9 +111,9 @@ impl fmt::Debug for EventLoop {
 /// its previous use cases don't directly require the window target to be passed in. However, it is
 /// still useful for some things, like indicating the need to exit the application or getting
 /// available monitors.
-pub struct EventLoopWindowTarget {
+pub struct EventLoopWindowTarget<TS: ThreadSafety = DefaultThreadSafety> {
     /// The associated reactor, cached for convenience.
-    reactor: &'static Reactor,
+    reactor: TS::Rc<Reactor<TS>>,
 
     /// The event loop proxy.
     proxy: EventLoopProxy<Wakeup>,
@@ -124,9 +126,21 @@ pub struct EventLoopWindowTarget {
     pub(crate) is_wayland: bool,
 }
 
-impl fmt::Debug for EventLoopWindowTarget {
+impl<TS: ThreadSafety> fmt::Debug for EventLoopWindowTarget<TS> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("EventLoopWindowTarget { .. }")
+    }
+}
+
+impl<TS: ThreadSafety> Clone for EventLoopWindowTarget<TS> {
+    fn clone(&self) -> Self {
+        Self {
+            reactor: self.reactor.clone(),
+            proxy: self.proxy.clone(),
+            raw_display_handle: self.raw_display_handle,
+            #[cfg(any(x11_platform, wayland_platform))]
+            is_wayland: self.is_wayland,
+        }
     }
 }
 
@@ -142,18 +156,6 @@ pub struct EventLoopBuilder {
 impl fmt::Debug for EventLoopBuilder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("EventLoopBuilder { .. }")
-    }
-}
-
-impl Clone for EventLoopWindowTarget {
-    fn clone(&self) -> Self {
-        Self {
-            reactor: self.reactor,
-            proxy: self.proxy.clone(),
-            raw_display_handle: self.raw_display_handle,
-            #[cfg(any(x11_platform, wayland_platform))]
-            is_wayland: self.is_wayland,
-        }
     }
 }
 
@@ -175,11 +177,11 @@ impl EventLoopBuilder {
     /// This function results in platform-specific backend initialization.
     ///
     /// [`platform`]: crate::platform
-    pub fn build(&mut self) -> EventLoop {
+    pub fn build<TS: ThreadSafety>(&mut self) -> EventLoop<TS> {
         let inner = self.inner.build();
         EventLoop {
             window_target: EventLoopWindowTarget {
-                reactor: Reactor::get(),
+                reactor: Reactor::<TS>::get(),
                 proxy: inner.create_proxy(),
                 raw_display_handle: inner.raw_display_handle(),
                 #[cfg(any(x11_platform, wayland_platform))]
@@ -208,30 +210,30 @@ impl Default for EventLoopBuilder {
     }
 }
 
-unsafe impl HasRawDisplayHandle for EventLoop {
+unsafe impl<TS: ThreadSafety> HasRawDisplayHandle for EventLoop<TS> {
     fn raw_display_handle(&self) -> RawDisplayHandle {
         self.window_target.raw_display_handle
     }
 }
 
-impl EventLoop {
+impl<TS: ThreadSafety> EventLoop<TS> {
     /// Alias for [`EventLoopBuilder::new().build()`].
     ///
     /// [`EventLoopBuilder::new().build()`]: EventLoopBuilder::build
     #[inline]
-    pub fn new() -> EventLoop {
+    pub fn new() -> EventLoop<TS> {
         EventLoopBuilder::new().build()
     }
 }
 
-impl Default for EventLoop {
+impl<TS: ThreadSafety> Default for EventLoop<TS> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl EventLoopWindowTarget {
+impl<TS: ThreadSafety> EventLoopWindowTarget<TS> {
     /// Request that the event loop exit as soon as possible.
     #[inline]
     pub fn set_exit(&self) {
@@ -260,13 +262,13 @@ impl EventLoopWindowTarget {
 
     /// Get the handler for the `Resumed` event.
     #[inline]
-    pub fn resumed(&self) -> &Handler<()> {
+    pub fn resumed(&self) -> &Handler<(), TS> {
         &self.reactor.evl_registration.resumed
     }
 
     /// Get the handler for the `Suspended` event.
     #[inline]
-    pub fn suspended(&self) -> &Handler<()> {
+    pub fn suspended(&self) -> &Handler<(), TS> {
         &self.reactor.evl_registration.suspended
     }
 
@@ -303,16 +305,16 @@ impl EventLoopWindowTarget {
     }
 }
 
-unsafe impl HasRawDisplayHandle for EventLoopWindowTarget {
+unsafe impl<TS: ThreadSafety> HasRawDisplayHandle for EventLoopWindowTarget<TS> {
     fn raw_display_handle(&self) -> RawDisplayHandle {
         self.raw_display_handle
     }
 }
 
-impl EventLoop {
+impl<TS: ThreadSafety + 'static> EventLoop<TS> {
     /// Manually get a reference to the event loop's window target.
     #[inline]
-    pub fn window_target(&self) -> &EventLoopWindowTarget {
+    pub fn window_target(&self) -> &EventLoopWindowTarget<TS> {
         &self.window_target
     }
 
@@ -322,10 +324,7 @@ impl EventLoop {
         let inner = self.inner;
 
         let mut future = Box::pin(future);
-        let mut filter = match crate::filter::Filter::new(&inner, future.as_mut()) {
-            ReturnOrFinish::FutureReturned(i) => match i {},
-            ReturnOrFinish::Output(f) => f,
-        };
+        let mut filter = crate::filter::Filter::<TS>::new(&inner);
 
         inner.run(move |event, elwt, flow| {
             filter.handle_event(future.as_mut(), event, elwt, flow);
@@ -333,8 +332,8 @@ impl EventLoop {
     }
 }
 
-impl ops::Deref for EventLoop {
-    type Target = EventLoopWindowTarget;
+impl<TS: ThreadSafety> ops::Deref for EventLoop<TS> {
+    type Target = EventLoopWindowTarget<TS>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -342,7 +341,7 @@ impl ops::Deref for EventLoop {
     }
 }
 
-impl ops::DerefMut for EventLoop {
+impl<TS: ThreadSafety> ops::DerefMut for EventLoop<TS> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.window_target

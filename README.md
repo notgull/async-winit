@@ -60,9 +60,10 @@ This strategy is a bit long winded. Now, compare against the equivalent `async-w
 ```rust
 use async_winit::event_loop::EventLoop;
 use async_winit::window::Window;
+use async_winit::ThreadUnsafe;
 use futures_lite::prelude::*;
 
-fn main2(evl: EventLoop) {
+fn main2(evl: EventLoop<ThreadUnsafe>) {
     let window_target = evl.window_target().clone();
 
     evl.block_on(async move {
@@ -71,13 +72,13 @@ fn main2(evl: EventLoop) {
             window_target.resumed().await;
 
             // Create a window.
-            let window = Window::new().await.unwrap();
+            let window = Window::<ThreadUnsafe>::new().await.unwrap();
 
             // Print the size of the window when it is resized.
             let print_size = async {
                 window
                     .resized()
-                    .wait_many()
+                    .wait()
                     .for_each(|size| {
                         println!("{:?}", size);
                     })
@@ -88,14 +89,14 @@ fn main2(evl: EventLoop) {
 
             // Wait until the window is closed.
             let close = async {
-                window.close_requested().wait_once().await;
+                window.close_requested().wait().await;
                 println!("Close");
                 true
             };
 
             // Wait until the application is suspended.
             let suspend = async {
-                window_target.suspended().wait_once().await;
+                window_target.suspended().wait().await;
                 false
             };
 

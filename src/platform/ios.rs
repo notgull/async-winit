@@ -31,6 +31,7 @@ use winit::platform::ios::{WindowBuilderExtIOS as _, WindowExtIOS as _};
 use super::__private as sealed;
 use crate::event_loop::EventLoop;
 use crate::window::{Window, WindowBuilder};
+use crate::ThreadSafety;
 
 /// Additional methods on [`EventLoop`] that are specific to iOS.
 ///
@@ -40,7 +41,7 @@ pub trait EventLoopExtIOS: sealed::EventLoopPrivate {
     fn idiom(&self) -> Idiom;
 }
 
-impl EventLoopExtIOS for EventLoop {
+impl<TS: ThreadSafety> EventLoopExtIOS for EventLoop<TS> {
     fn idiom(&self) -> Idiom {
         use winit::platform::ios::EventLoopExtIOS as _;
         self.inner.idiom()
@@ -125,7 +126,7 @@ pub trait WindowExtIOS: sealed::WindowPrivate {
     fn set_prefers_status_bar_hidden(&self, hidden: bool);
 }
 
-impl WindowExtIOS for Window {
+impl<TS: ThreadSafety> WindowExtIOS for Window<TS> {
     #[inline]
     fn ui_window(&self) -> *mut c_void {
         self.window().ui_window()

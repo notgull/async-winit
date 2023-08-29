@@ -22,6 +22,7 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 mod handler;
 mod oneoff;
 mod reactor;
+mod sync;
 mod timer;
 
 // Modules we need to change for `async-winit`.
@@ -44,5 +45,9 @@ pub mod event {
 #[doc(inline)]
 pub use winit::{dpi, error, monitor};
 
-pub use handler::{Event, Handler, WaitGuard, WaitMany, WaitOnce};
+pub use handler::{Event, Handler, Waiter};
+pub use sync::{DefaultThreadSafety, ThreadSafety, ThreadUnsafe};
 pub use timer::Timer;
+
+#[cfg(feature = "thread_safe")]
+pub use sync::ThreadSafe;

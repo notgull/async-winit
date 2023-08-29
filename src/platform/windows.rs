@@ -29,6 +29,7 @@ pub use winit::platform::windows::{
 use super::__private as sealed;
 use crate::event_loop::EventLoopBuilder;
 use crate::window::{Icon, Window, WindowBuilder};
+use crate::ThreadSafety;
 
 use std::os::raw::c_void;
 
@@ -136,7 +137,7 @@ pub trait WindowExtWindows: sealed::WindowPrivate {
     fn set_undecorated_shadow(&self, shadow: bool);
 }
 
-impl WindowExtWindows for Window {
+impl<TS: ThreadSafety> WindowExtWindows for Window<TS> {
     fn hwnd(&self) -> HWND {
         self.window().hwnd()
     }

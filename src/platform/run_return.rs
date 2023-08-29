@@ -21,6 +21,7 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 
 use crate::event_loop::EventLoop;
 use crate::filter::{Filter, ReturnOrFinish};
+use crate::sync::ThreadSafety;
 
 use futures_lite::pin;
 
@@ -39,7 +40,7 @@ pub trait EventLoopExtRunReturn {
         F: Future;
 }
 
-impl EventLoopExtRunReturn for EventLoop {
+impl<TS: ThreadSafety> EventLoopExtRunReturn for EventLoop<TS> {
     fn block_on_return<F>(&mut self, fut: F) -> ReturnOrFinish<i32, F::Output>
     where
         F: Future,
@@ -50,10 +51,7 @@ impl EventLoopExtRunReturn for EventLoop {
 
         pin!(fut);
 
-        let mut filter = match Filter::new(inner, fut.as_mut()) {
-            ReturnOrFinish::FutureReturned(fut) => return ReturnOrFinish::FutureReturned(fut),
-            ReturnOrFinish::Output(filter) => filter,
-        };
+        let mut filter = Filter::<TS>::new(inner);
 
         let mut output = None;
         let exit = inner.run_return({

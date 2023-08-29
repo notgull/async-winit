@@ -21,18 +21,16 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 use crate::filter::ReactorWaker;
 use crate::handler::Handler;
 use crate::oneoff::Complete;
+use crate::sync::{ThreadSafety, __private::*};
 use crate::window::registration::Registration as WinRegistration;
 use crate::window::WindowBuilder;
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::task::Waker;
 use std::time::{Duration, Instant};
-
-use async_channel::{Receiver, Sender};
-use concurrent_queue::ConcurrentQueue;
-use once_cell::sync::OnceCell as OnceLock;
 
 use winit::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
 use winit::error::{ExternalError, NotSupportedError, OsError};
@@ -46,32 +44,33 @@ use winit::window::{
 const NEEDS_EXIT: i64 = 0x1;
 const EXIT_CODE_SHIFT: u32 = 1;
 
-pub(crate) struct Reactor {
+#[doc(hidden)]
+pub struct Reactor<T: ThreadSafety> {
     /// The exit code to exit with, if any.
-    exit_code: AtomicI64,
+    exit_code: T::AtomicI64,
 
     /// The channel used to send event loop operation requests.
-    evl_ops: (Sender<EventLoopOp>, Receiver<EventLoopOp>),
+    evl_ops: (T::Sender<EventLoopOp<T>>, T::Receiver<EventLoopOp<T>>),
 
     /// The list of windows.
-    windows: Mutex<HashMap<WindowId, Arc<WinRegistration>>>,
+    windows: T::Mutex<HashMap<WindowId, T::Rc<WinRegistration<T>>>>,
 
     /// The event loop proxy.
     ///
     /// Used to wake up the event loop.
-    proxy: OnceLock<Arc<ReactorWaker>>,
+    proxy: T::OnceLock<Arc<ReactorWaker>>,
 
     /// The timer wheel.
-    timers: Mutex<BTreeMap<(Instant, usize), Waker>>,
+    timers: T::Mutex<BTreeMap<(Instant, usize), Waker>>,
 
     /// Queue of timer operations.
-    timer_op_queue: ConcurrentQueue<TimerOp>,
+    timer_op_queue: T::ConcurrentQueue<TimerOp>,
 
     /// The last timer ID we used.
-    timer_id: AtomicUsize,
+    timer_id: T::AtomicUsize,
 
     /// Registration for event loop events.
-    pub(crate) evl_registration: GlobalRegistration,
+    pub(crate) evl_registration: GlobalRegistration<T>,
 }
 
 enum TimerOp {
@@ -82,28 +81,29 @@ enum TimerOp {
     RemoveTimer(Instant, usize),
 }
 
-impl Reactor {
-    /// Get the global instance of the `Reactor`.
-    ///
-    /// Since there can only be one instance of `EventLoop`, we can also have only one instance of a `Reactor`.
-    /// If `winit` is ever updated so that `EventLoopBuilder::build()` doesn't panic if it's called more than
-    /// once, remove this!
-    ///
-    /// Relevant winit code:
-    /// <https://github.com/rust-windowing/winit/blob/2486f0f1a1d00ac9e5936a5222b2cfe90ceeca02/src/event_loop.rs#L114-L117>
-    pub(crate) fn get() -> &'static Self {
-        static REACTOR: OnceLock<Reactor> = OnceLock::new();
+impl<TS: ThreadSafety> Reactor<TS> {
+    /// Create an empty reactor.
+    pub(crate) fn new() -> Self {
+        static ALREADY_EXISTS: AtomicBool = AtomicBool::new(false);
+        if ALREADY_EXISTS.swap(true, Ordering::SeqCst) {
+            panic!("Only one instance of `Reactor` can exist at a time");
+        }
 
-        REACTOR.get_or_init(|| Reactor {
-            exit_code: AtomicI64::new(0),
-            proxy: OnceLock::new(),
-            evl_ops: async_channel::bounded(1024),
-            windows: Mutex::new(HashMap::new()),
-            timers: BTreeMap::new().into(),
-            timer_op_queue: ConcurrentQueue::bounded(1024),
-            timer_id: AtomicUsize::new(1),
+        Reactor {
+            exit_code: <TS::AtomicI64>::new(0),
+            proxy: TS::OnceLock::new(),
+            evl_ops: TS::channel_bounded(1024),
+            windows: TS::Mutex::new(HashMap::new()),
+            timers: TS::Mutex::new(BTreeMap::new()),
+            timer_op_queue: TS::ConcurrentQueue::bounded(1024),
+            timer_id: TS::AtomicUsize::new(1),
             evl_registration: GlobalRegistration::new(),
-        })
+        }
+    }
+
+    /// Get the global instance of this reactor.
+    pub(crate) fn get() -> TS::Rc<Self> {
+        TS::get_reactor()
     }
 
     /// Set the event loop proxy.
@@ -143,7 +143,7 @@ impl Reactor {
             // Process incoming timer operations.
             let mut timers = self.timers.lock().unwrap();
             self.process_timer_ops(&mut timers);
-            op = e.into_inner();
+            op = e;
         }
 
         // Notify that we have new timers.
@@ -160,14 +160,14 @@ impl Reactor {
             // Process incoming timer operations.
             let mut timers = self.timers.lock().unwrap();
             self.process_timer_ops(&mut timers);
-            op = e.into_inner();
+            op = e;
         }
     }
 
     /// Insert a window into the window list.
-    pub(crate) fn insert_window(&self, id: WindowId) -> Arc<WinRegistration> {
+    pub(crate) fn insert_window(&self, id: WindowId) -> TS::Rc<WinRegistration<TS>> {
         let mut windows = self.windows.lock().unwrap();
-        let registration = Arc::new(WinRegistration::new());
+        let registration = TS::Rc::new(WinRegistration::new());
         windows.insert(id, registration.clone());
         registration
     }
@@ -181,7 +181,7 @@ impl Reactor {
     /// Process pending timer operations.
     fn process_timer_ops(&self, timers: &mut BTreeMap<(Instant, usize), Waker>) {
         // Limit the number of operations we process at once to avoid starving other tasks.
-        let limit = self.timer_op_queue.capacity().unwrap();
+        let limit = self.timer_op_queue.capacity();
 
         self.timer_op_queue
             .try_iter()
@@ -200,7 +200,7 @@ impl Reactor {
     }
 
     /// Process timers and return the amount of time to wait.
-    pub(crate) fn process_timers(&self, wakers: &mut Vec<Waker>) -> Option<Duration> {
+    pub(crate) fn process_timers(&self, wakers: &mut Vec<Waker>) -> Option<Instant> {
         // Process incoming timer operations.
         let mut timers = self.timers.lock().unwrap();
         self.process_timer_ops(&mut timers);
@@ -212,14 +212,11 @@ impl Reactor {
         let ready = std::mem::replace(&mut *timers, pending);
 
         // Figure out how long it will be until the next timer is ready.
-        let timeout = if ready.is_empty() {
-            timers
-                .keys()
-                .next()
-                .map(|(deadline, _)| deadline.saturating_duration_since(now))
+        let deadline = if ready.is_empty() {
+            timers.keys().next().map(|(deadline, _)| *deadline)
         } else {
             // There are timers ready to fire now.
-            Some(Duration::ZERO)
+            Some(now)
         };
 
         drop(timers);
@@ -227,7 +224,7 @@ impl Reactor {
         // Push wakers for ready timers.
         wakers.extend(ready.into_values());
 
-        timeout
+        deadline
     }
 
     /// Wake up the event loop.
@@ -238,8 +235,10 @@ impl Reactor {
     }
 
     /// Push an event loop operation.
-    pub(crate) async fn push_event_loop_op(&self, op: EventLoopOp) {
-        self.evl_ops.0.send(op).await.unwrap();
+    pub(crate) async fn push_event_loop_op(&self, op: EventLoopOp<TS>) {
+        if self.evl_ops.0.send(op).await.is_err() {
+            panic!("Failed to push event loop operation");
+        }
 
         // Notify the event loop that there is a new operation.
         self.notify();
@@ -250,13 +249,17 @@ impl Reactor {
         &self,
         elwt: &winit::event_loop::EventLoopWindowTarget<T>,
     ) {
-        for _ in 0..self.evl_ops.1.capacity().unwrap() {
-            if let Ok(op) = self.evl_ops.1.try_recv() {
+        for _ in 0..self.evl_ops.1.capacity() {
+            if let Some(op) = self.evl_ops.1.try_recv() {
                 op.run(elwt);
             } else {
                 break;
             }
         }
+    }
+
+    pub fn evl_ops_len(&self) -> usize {
+        self.evl_ops.1.len()
     }
 
     /// Post an event to the reactor.
@@ -294,21 +297,21 @@ impl Reactor {
 }
 
 /// An operation to run in the main event loop thread.
-pub(crate) enum EventLoopOp {
+pub(crate) enum EventLoopOp<TS: ThreadSafety> {
     /// Build a window.
     BuildWindow {
         /// The window builder to build.
         builder: Box<WindowBuilder>,
 
         /// The window has been built.
-        waker: Complete<Result<winit::window::Window, OsError>>,
+        waker: Complete<Result<winit::window::Window, OsError>, TS>,
     },
 
     /// Get the primary monitor.
-    PrimaryMonitor(Complete<Option<MonitorHandle>>),
+    PrimaryMonitor(Complete<Option<MonitorHandle>, TS>),
 
     /// Get the list of monitors.
-    AvailableMonitors(Complete<Vec<MonitorHandle>>),
+    AvailableMonitors(Complete<Vec<MonitorHandle>, TS>),
 
     /// Set the device filter.
     SetDeviceFilter {
@@ -316,487 +319,554 @@ pub(crate) enum EventLoopOp {
         filter: DeviceEventFilter,
 
         /// The device filter has been set.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the inner position of the window.
     InnerPosition {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>>,
+        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>, TS>,
     },
 
     /// Get the outer position of the window.
     OuterPosition {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>>,
+        waker: Complete<Result<PhysicalPosition<i32>, NotSupportedError>, TS>,
     },
 
     /// Set the outer position.
     SetOuterPosition {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The position.
         position: Position,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the inner size.
     InnerSize {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<PhysicalSize<u32>>,
+        waker: Complete<PhysicalSize<u32>, TS>,
     },
 
     /// Set the inner size.
     SetInnerSize {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The size.
         size: Size,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the outer size.
     OuterSize {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<PhysicalSize<u32>>,
+        waker: Complete<PhysicalSize<u32>, TS>,
     },
 
     /// Set the minimum inner size.
     SetMinInnerSize {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The size.
         size: Option<Size>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the maximum inner size.
     SetMaxInnerSize {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The size.
         size: Option<Size>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the resize increments.
     ResizeIncrements {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<PhysicalSize<u32>>>,
+        waker: Complete<Option<PhysicalSize<u32>>, TS>,
     },
 
     /// Set the resize increments.
     SetResizeIncrements {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The size.
         size: Option<Size>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the title.
     SetTitle {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The title.
         title: String,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set whether the window is transparent.
     SetTransparent {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether the window is transparent.
         transparent: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set whether or not the window is resizable.
     SetResizable {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether or not the window is resizable.
         resizable: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set whether the window is visible.
     SetVisible {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether the window is visible.
         visible: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is resizable.
     Resizable {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<bool>,
+        waker: Complete<bool, TS>,
     },
 
     /// Get whether the window is visible.
     Visible {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<bool>>,
+        waker: Complete<Option<bool>, TS>,
     },
 
     /// Set whether the window is minimized.
     SetMinimized {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether the window is minimized.
         minimized: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is minimized.
     Minimized {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<bool>>,
+        waker: Complete<Option<bool>, TS>,
     },
 
     /// Set whether the window is maximized.
     SetMaximized {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether the window is maximized.
         maximized: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is maximized.
     Maximized {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<bool>,
+        waker: Complete<bool, TS>,
     },
 
     /// Set whether the window is fullscreen.
     SetFullscreen {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether the window is fullscreen.
         fullscreen: Option<Fullscreen>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is fullscreen.
     Fullscreen {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<Fullscreen>>,
+        waker: Complete<Option<Fullscreen>, TS>,
     },
 
     /// Set whether the window is decorated.
     SetDecorated {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether the window is decorated.
         decorated: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get whether the window is decorated.
     Decorated {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<bool>,
+        waker: Complete<bool, TS>,
     },
 
     /// Set the window level.
     SetWindowLevel {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The window level.
         level: WindowLevel,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the window icon.
     SetWindowIcon {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The window icon.
         icon: Option<Icon>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the IME position.
     SetImePosition {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The IME position.
         position: Position,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set whether IME is allowed.
     SetImeAllowed {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether IME is allowed.
         allowed: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the IME purpose.
     SetImePurpose {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The IME purpose.
         purpose: ImePurpose,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Focus the window.
     FocusWindow {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Tell whether or not the window is focused.
     Focused {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<bool>,
+        waker: Complete<bool, TS>,
     },
 
     /// Request user attention.
     RequestUserAttention {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The request.
         request_type: Option<UserAttentionType>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the theme of the window.
     SetTheme {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The theme.
         theme: Option<Theme>,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the theme of the window.
     Theme {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<Theme>>,
+        waker: Complete<Option<Theme>, TS>,
     },
 
     /// Set whether the content is protected.
     SetProtectedContent {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether the content is protected.
         protected: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Get the title.
     Title {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<String>,
+        waker: Complete<String, TS>,
     },
 
     /// Set the cursor icon.
     SetCursorIcon {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The cursor icon.
         icon: CursorIcon,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Set the cursor position.
     SetCursorPosition {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The cursor position.
         position: Position,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Set the cursor grab.
     SetCursorGrab {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The mode to grab the cursor.
         mode: CursorGrabMode,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Set whether the cursor is visible.
     SetCursorVisible {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Whether the cursor is visible.
         visible: bool,
 
         /// Wake up the task.
-        waker: Complete<()>,
+        waker: Complete<(), TS>,
     },
 
     /// Drag the window.
     DragWindow {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Drag-resize the window.
     DragResizeWindow {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         direction: ResizeDirection,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Set the cursor hit test.
     SetCursorHitTest {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// The cursor hit test.
         hit_test: bool,
 
         /// Wake up the task.
-        waker: Complete<Result<(), ExternalError>>,
+        waker: Complete<Result<(), ExternalError>, TS>,
     },
 
     /// Get the current monitor.
     CurrentMonitor {
         /// The window.
-        window: Arc<Window>,
+        window: TS::Rc<Window>,
 
         /// Wake up the task.
-        waker: Complete<Option<MonitorHandle>>,
+        waker: Complete<Option<MonitorHandle>, TS>,
     },
 }
 
-impl EventLoopOp {
+impl<TS: ThreadSafety> fmt::Debug for EventLoopOp<TS> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EventLoopOp::BuildWindow { .. } => f
+                .debug_struct("BuildWindow")
+                .field("builder", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::PrimaryMonitor(_) => f.debug_struct("PrimaryMonitor").finish(),
+            EventLoopOp::AvailableMonitors(_) => f.debug_struct("AvailableMonitors").finish(),
+            EventLoopOp::SetDeviceFilter { .. } => f
+                .debug_struct("SetDeviceFilter")
+                .field("filter", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::InnerPosition { .. } => f
+                .debug_struct("InnerPosition")
+                .field("window", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::OuterPosition { .. } => f
+                .debug_struct("OuterPosition")
+                .field("window", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::SetOuterPosition { .. } => f
+                .debug_struct("SetOuterPosition")
+                .field("window", &"...")
+                .field("position", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::InnerSize { .. } => f
+                .debug_struct("InnerSize")
+                .field("window", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::SetInnerSize { .. } => f
+                .debug_struct("SetInnerSize")
+                .field("window", &"...")
+                .field("size", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::OuterSize { .. } => f
+                .debug_struct("OuterSize")
+                .field("window", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::SetMinInnerSize { .. } => f
+                .debug_struct("SetMinInnerSize")
+                .field("window", &"...")
+                .field("size", &"...")
+                .field("waker", &"...")
+                .finish(),
+            EventLoopOp::SetMaxInnerSize { .. } => f
+                .debug_struct("SetMaxInnerSize")
+                .field("window", &"...")
+                .field("size", &"...")
+                .field("waker", &"...")
+                .finish(),
+            _ => {
+                // TODO: got bored
+                f.debug_struct("EventLoopOp").finish()
+            }
+        }
+    }
+}
+
+impl<TS: ThreadSafety> EventLoopOp<TS> {
     /// Run this event loop operation on a window target.
     fn run<T: 'static>(self, target: &winit::event_loop::EventLoopWindowTarget<T>) {
         match self {
@@ -1128,12 +1198,12 @@ impl EventLoopOp {
     }
 }
 
-pub(crate) struct GlobalRegistration {
-    pub(crate) resumed: Handler<()>,
-    pub(crate) suspended: Handler<()>,
+pub(crate) struct GlobalRegistration<T: ThreadSafety> {
+    pub(crate) resumed: Handler<(), T>,
+    pub(crate) suspended: Handler<(), T>,
 }
 
-impl GlobalRegistration {
+impl<TS: ThreadSafety> GlobalRegistration<TS> {
     pub(crate) fn new() -> Self {
         Self {
             resumed: Handler::new(),

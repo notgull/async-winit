@@ -6,6 +6,7 @@
 use async_winit::dpi::PhysicalSize;
 use async_winit::event_loop::EventLoop;
 use async_winit::window::Window;
+use async_winit::ThreadUnsafe;
 
 use color_eyre::eyre::{bail, eyre, Context, Error, Result};
 
@@ -27,7 +28,7 @@ fn main() {
     main2(EventLoop::new())
 }
 
-fn main2(event_loop: EventLoop) {
+fn main2(event_loop: EventLoop<ThreadUnsafe>) {
     let target = event_loop.window_target().clone();
 
     event_loop.block_on(async move {
@@ -76,20 +77,20 @@ fn main2(event_loop: EventLoop) {
 
         loop {
             // Wait for the application to become resumed, poll the executor while we do.
-            executor.run(target.resumed()).await;
+            executor.run(target.resumed().wait()).await;
 
             // Create a window.
-            let window = Window::new().await.unwrap();
+            let window = Window::<ThreadUnsafe>::new().await.unwrap();
             state.borrow_mut().use_window(&window);
 
             // Wait for the application to be suspended.
-            let mut suspend_guard = target.suspended().wait_guard();
+            let mut suspend_guard = target.suspended().wait();
 
             // Wait for the window to close.
             let mut wait_for_close = executor.spawn({
                 let window = window.clone();
                 async move {
-                    window.close_requested().wait_once().await;
+                    window.close_requested().await;
                     None
                 }
             });
@@ -102,11 +103,11 @@ fn main2(event_loop: EventLoop) {
 
                 async move {
                     let mut graphics_context = None;
-                    let mut draw_guard = window.redraw_requested().wait_guard();
+                    let mut draw_guard = window.redraw_requested().wait();
 
                     loop {
                         // Wait until we need to draw.
-                        let _guard = draw_guard.wait().await;
+                        let _guard = draw_guard.hold().await;
 
                         // Get the window's size.
                         let size = window.inner_size().await;
@@ -145,7 +146,7 @@ fn main2(event_loop: EventLoop) {
                 async move {
                     window
                         .received_character()
-                        .wait_many()
+                        .wait()
                         .for_each(|ch| {
                             if (ch == 'R' || ch == 'r') && !state.borrow().running {
                                 run_again.try_send(()).ok();
@@ -157,7 +158,7 @@ fn main2(event_loop: EventLoop) {
 
             // Run the executor until either the window closes or the application suspends.
             let hold_guard = async {
-                let hold_guard = suspend_guard.wait().await;
+                let hold_guard = suspend_guard.hold().await;
                 Some(hold_guard)
             }
             .or(executor.run(&mut wait_for_close))
@@ -168,8 +169,8 @@ fn main2(event_loop: EventLoop) {
                 rerun_http.cancel().await;
                 wait_for_close.cancel().await;
                 draw.cancel().await;
-                drop((window, guard));
                 state.borrow_mut().drop_window();
+                drop((window, guard));
             } else {
                 target.exit().await;
             }
@@ -386,7 +387,7 @@ enum HttpScheme {
 struct State {
     running: bool,
     requests: Vec<HttpRequest>,
-    current_window: Option<Window>,
+    current_window: Option<Window<ThreadUnsafe>>,
 }
 
 impl State {
@@ -398,7 +399,7 @@ impl State {
         }
     }
 
-    fn use_window(&mut self, window: &Window) {
+    fn use_window(&mut self, window: &Window<ThreadUnsafe>) {
         assert!(self.current_window.is_none());
         self.current_window = Some(window.clone());
     }

@@ -23,6 +23,7 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 
 use super::__private as sealed;
 use crate::event_loop::{EventLoopBuilder, EventLoopWindowTarget};
+use crate::sync::ThreadSafety;
 use crate::window::{Window, WindowBuilder};
 
 use std::os::raw;
@@ -52,7 +53,7 @@ pub trait EventLoopWindowTargetExtWayland: sealed::EventLoopWindowTargetPrivate 
     fn wayland_display(&self) -> Option<*mut raw::c_void>;
 }
 
-impl EventLoopWindowTargetExtWayland for EventLoopWindowTarget {
+impl<TS: ThreadSafety> EventLoopWindowTargetExtWayland for EventLoopWindowTarget<TS> {
     #[inline]
     fn is_wayland(&self) -> bool {
         self.is_wayland
@@ -109,7 +110,7 @@ pub trait WindowExtWayland: sealed::WindowPrivate {
     fn wayland_display(&self) -> Option<*mut raw::c_void>;
 }
 
-impl WindowExtWayland for Window {
+impl<TS: ThreadSafety> WindowExtWayland for Window<TS> {
     #[inline]
     fn wayland_surface(&self) -> Option<*mut raw::c_void> {
         self.window().wayland_surface()
