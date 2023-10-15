@@ -22,6 +22,7 @@ Public License along with `async-winit`. If not, see <https://www.gnu.org/licens
 //! `winit` applications. The `Filter` type can be provided events, and will send those events to this
 //! library's event handlers.
 
+use std::cell::Cell;
 use std::cmp;
 use std::future::Future;
 use std::pin::Pin;
@@ -133,11 +134,11 @@ impl<TS: ThreadSafety> Filter<TS> {
         F: Future,
     {
         // Create a future that can be polled freely.
-        let mut output = ReturnOrFinish::Output(());
+        let output = Cell::new(ReturnOrFinish::Output(()));
         let future = {
-            let output = &mut output;
+            let output = &output;
             async move {
-                *output = ReturnOrFinish::FutureReturned(future.await);
+                output.set(ReturnOrFinish::FutureReturned(future.await));
             }
         };
         futures_lite::pin!(future);
@@ -264,7 +265,7 @@ impl<TS: ThreadSafety> Filter<TS> {
         }
 
         // Return the output if any.
-        output
+        output.replace(ReturnOrFinish::Output(()))
     }
 }
 
