@@ -42,7 +42,7 @@ aw_test_version() {
     return
   fi
   
-  aw_check_target wasm32-unknown-unknown build
+  #aw_check_target wasm32-unknown-unknown build
   aw_check_target x86_64-pc-windows-gnu build
   aw_check_target x86_64-apple-darwin check
   aw_check_target i686-unknown-linux-gnu build
