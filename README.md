@@ -136,7 +136,7 @@ In my opinion, the flatter `async` style is much easier to read and understand. 
 
 ## Credits
 
-`async-winit` was created by John Nunley ([@notgull](https://github.com/notgull)).
+`async-winit` was created by John Nunley ([@notgull](https://sr.ht/~notgull)).
 
 This project is heavily based on [`async-io`] by Stjepan Glavina et al, as well as [`winit`] by Pierre Kreiger et al.
 

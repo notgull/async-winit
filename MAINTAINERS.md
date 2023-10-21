@@ -4,7 +4,7 @@ The intellectual property rights for `async-winit` are owned by Project Leadersh
 
 ## Benevolent Dictator for Life
 
-- [John Nunley](https://github.com/notgull) is the Benevolent Dictator for Life (BDFL) of this project. He has the final say in project direction and disputes.
+- [John Nunley](https://sr.ht/~notgull) is the Benevolent Dictator for Life (BDFL) of this project. He has the final say in project direction and disputes.
 
 ## Other Information
 
@@ -12,9 +12,7 @@ Members of Project Leadership may change in the future without license changes.
 
 Contract project leadership at the email consisting of:
 
-- The BDFL's first initial.
-- The BDFL's middle initial.
-- The BDFL's last name.
-- Zero then one.
+- The first three letters of "developer".
 - The "at" sign.
-- Gmail dot com.
+- notgull dot net
+

@@ -2,9 +2,10 @@
 name = "async_winit_smol_example"
 version = "0.1.0"
 edition = "2021"
-authors = ["John Nunley <jtnunley01@gmail.com>"]
+authors = ["John Nunley <dev@notgull.net>"]
 description = "Example of async-winit using smol"
-repository = "https://github.com/notgull/async-winit"
+repository = "https://git.sr.ht/~notgull/async-winit"
+publish = false
 
 [dependencies]
 async-rustls = "0.3.0"
