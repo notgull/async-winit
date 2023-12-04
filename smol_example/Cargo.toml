@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["John Nunley <dev@notgull.net>"]
 description = "Example of async-winit using smol"
-repository = "https://git.sr.ht/~notgull/async-winit"
+repository = "https://src.notgull.net/notgull/async-winit"
 publish = false
 
 [dependencies]

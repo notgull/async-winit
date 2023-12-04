@@ -4,8 +4,8 @@ version = "0.2.1"
 edition = "2021"
 authors = ["John Nunley <dev@notgull.net>"]
 description = "Use winit like an async runtime"
-repository = "https://git.sr.ht/~notgull/async-winit"
-homepage = "https://git.sr.ht/~notgull/async-winit"
+repository = "https://src.notgull.net/notgull/async-winit"
+homepage = "https://src.notgull.net/notgull/async-winit"
 license = "LGPL-3.0-or-later OR MPL-2.0"
 rust-version = "1.67.1"
 
