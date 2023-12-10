@@ -22,7 +22,7 @@ steps:
     pull: always
     commands:
       - ensure_tool.sh wayland x11
-      - test_rust.sh stable x11 wayland thread_safe,x11,wayland
+      - test_rust.sh stable --skip-macos --skip-ndf x11 wayland thread_safe,x11,wayland
 ---
 kind: pipeline
 type: docker
@@ -37,7 +37,7 @@ steps:
     pull: always
     commands:
       - ensure_tool.sh wayland x11
-      - test_rust.sh beta x11 wayland thread_safe,x11,wayland
+      - test_rust.sh beta --skip-macos --skip-ndf x11 wayland thread_safe,x11,wayland
 ---
 kind: pipeline
 type: docker
@@ -52,7 +52,7 @@ steps:
     pull: always
     commands:
       - ensure_tool.sh wayland x11
-      - test_rust.sh nightly x11 wayland thread_safe,x11,wayland
+      - test_rust.sh nightly --skip-macos --skip-ndf x11 wayland thread_safe,x11,wayland
 ---
 kind: pipeline
 type: docker
@@ -67,7 +67,7 @@ steps:
     pull: always
     commands:
       - ensure_tool.sh wayland x11
-      - test_rust.sh 1.65.0 x11 wayland thread_safe,x11,wayland
+      - test_rust.sh 1.65.0 --skip-macos --skip-ndf x11 wayland thread_safe,x11,wayland
 ---
 kind: pipeline
 type: docker
