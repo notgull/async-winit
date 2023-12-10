@@ -31,10 +31,6 @@ use std::thread;
 
 use unsend::channel as us_channel;
 
-pub(crate) mod prelude {
-    pub use super::__private::{Atomic, Mutex, OnceLock};
-}
-
 #[cfg(feature = "thread_safe")]
 pub use thread_safe::ThreadSafe;
 

@@ -2,13 +2,17 @@
 
 Use `winit` like the `async` runtime you've always wanted.
 
-`winit` is actually asynchronous, contrary to popular belief; it's just not `async`. It uses an event loop to handle events, which is an good fit for some cases but not others. The maintainers of `winit` have referred to this type of event loop as "poor man's `async`"; a system that is not `async` but is still asynchronous.
+`winit` is actually asynchronous, contrary to popular belief; it's just not
+`async`. It uses an event loop to handle events, which is an good fit for some
+cases but not others. The maintainers of `winit` have referred to this type of
+event loop as "poor man's `async`"; a system that is not `async` but is still asynchronous.
 
 This crate builds an `async` interface on top of this event loop.
 
 ## Example
 
-Consider the following `winit` program, which creates a window and prints the size of the window when it is resized:
+Consider the following `winit` program, which creates a window and prints the
+size of the window when it is resized:
 
 ```rust
 use winit::event::{Event, WindowEvent};
@@ -55,7 +59,8 @@ fn main() {
 }
 ```
 
-This strategy is a bit long winded. Now, compare against the equivalent `async-winit` program:
+This strategy is a bit long winded. Now, compare against the equivalent
+`async-winit` program:
 
 ```rust
 use async_winit::event_loop::EventLoop;
@@ -120,36 +125,54 @@ fn main() {
 }
 ```
 
-In my opinion, the flatter `async` style is much easier to read and understand. Your mileage may vary.
+In my opinion, the flatter `async` style is much easier to read and understand.
+Your mileage may vary.
 
 ## Pros
 
-- In many cases it may make more sense to think of a program as an `async` task, rather than an event loop.
-- You don't need to tie everything to the `EventLoopWindowTarget`; `Window::new()` and other functions take no parameters and can be called from anywhere as long as an `EventLoop` is running somewhere.
+- In many cases it may make more sense to think of a program as an `async` task,
+  rather than an event loop.
+- You don't need to tie everything to the `EventLoopWindowTarget`;
+  `Window::new()` and other functions take no parameters and can be called from
+  anywhere as long as an `EventLoop` is running somewhere.
 - You can use the `async` ecosystem to its full potential here.
 
 ## Cons
 
-- There is a not insignificant amount of overhead involved in using `async-winit`. This is because `async-winit` is built on top of `winit`, which is built on top of `winit`'s event loop. This means that `async-winit` has to convert between `async` and `winit`'s event loop, which is not free.
-- `async-winit` is not as low level as `winit`. This means that you can't do everything that you can do with `winit`.
-  - For instance, data cannot be shared mutable between individual tasks. This can be easily worked around with `RefCell` in simple cases, but still requires additional thought for shared state.
+- There is a not insignificant amount of overhead involved in using
+  `async-winit`. This is because `async-winit` is built on top of `winit`, which
+  is built on top of `winit`'s event loop. This means that `async-winit` has to
+  convert between `async` and `winit`'s event loop, which is not free.
+- `async-winit` is not as low level as `winit`. This means that you can't do
+  everything that you can do with `winit`.
+  - For instance, data cannot be shared mutable between individual tasks. This
+    can be easily worked around with `RefCell` in simple cases, but still
+    requires additional thought for shared state.
 
 ## Credits
 
 `async-winit` was created by John Nunley ([@notgull](https://sr.ht/~notgull)).
 
-This project is heavily based on [`async-io`] by Stjepan Glavina et al, as well as [`winit`] by Pierre Kreiger et al.
+This project is heavily based on [`async-io`] by Stjepan Glavina et al, as well
+as [`winit`] by Pierre Kreiger et al.
 
 [`async-io`]: https://crates.io/crates/async-io
 [`winit`]: https://crates.io/crates/winit
 
-## License 
+## License
 
-`async-winit` is free software: you can redistribute it and/or modify it under the terms of one of the following licenses:
+`async-winit` is free software: you can redistribute it and/or modify it under
+the terms of one of the following licenses:
 
-* GNU Lesser General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-* Mozilla Public License as published by the Mozilla Foundation, version 2. 
+- GNU Lesser General Public License as published by the Free Software
+  Foundation, either version 3 of the License, or (at your option) any later version.
+- Mozilla Public License as published by the Mozilla Foundation, version 2.
 
-`async-winit` is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License or the Mozilla Public License for more details.
+`async-winit` is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Lesser General Public License or the Mozilla
+Public License for more details.
 
-You should have received a copy of the GNU Lesser General Public License and the Mozilla Public License along with `async-winit`. If not, see <https://www.gnu.org/licenses/>. 
+You should have received a copy of the GNU Lesser General Public License and the
+Mozilla Public License along with `async-winit`. If not, see
+<https://www.gnu.org/licenses/>.

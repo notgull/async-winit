@@ -3,6 +3,8 @@
 //! smol's I/O reactor runs on another thread, giving the main thread a chance to
 //! run the winit reactor.
 
+#![allow(clippy::await_holding_refcell_ref)]
+
 use async_winit::dpi::PhysicalSize;
 use async_winit::event_loop::EventLoop;
 use async_winit::window::Window;
